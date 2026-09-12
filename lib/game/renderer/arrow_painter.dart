@@ -26,10 +26,14 @@ class ArrowMotionPath {
   factory ArrowMotionPath.build({
     required ArrowModel arrow,
     required double cellSize,
+    Offset origin = Offset.zero,
   }) {
     final anchors = [
       for (final point in arrow.points)
-        Offset((point.$2 + 0.5) * cellSize, (point.$1 + 0.5) * cellSize),
+        Offset(
+          origin.dx + (point.$2 + 0.5) * cellSize,
+          origin.dy + (point.$1 + 0.5) * cellSize,
+        ),
     ];
     final exit = Offset(
       arrow.exitDirection.dCol.toDouble(),
@@ -153,9 +157,9 @@ class ArrowPainter extends CustomPainter {
 
     canvas.save();
 
-    // Keep routes as fine vector lines even on small, dense boards.
-    final strokeWidth = (cellSize * 0.085).clamp(2.0, 3.0);
-    final headSize = (strokeWidth * 2.0).clamp(4.5, 6.0);
+    // Balanced, readable arrow stroke and arrowhead sizing.
+    final strokeWidth = (cellSize * 0.13).clamp(3.5, 4.8);
+    final headSize = (strokeWidth * 1.8).clamp(6.8, 8.5);
     final progress = snakeProgress ?? 0.0;
     final shift = snakeProgress == null
         ? 0.0
@@ -164,8 +168,8 @@ class ArrowPainter extends CustomPainter {
     final lastPt = animated.last + shakeOffset;
     final headDirection = motionPath.directionAt(shift + motionPath.length);
     final tip = Offset(
-      lastPt.dx + headDirection.dx * (cellSize * 0.36),
-      lastPt.dy + headDirection.dy * (cellSize * 0.36),
+      lastPt.dx + headDirection.dx * (cellSize * 0.38),
+      lastPt.dy + headDirection.dy * (cellSize * 0.38),
     );
 
     // Build the continuous snake path from tail to head
@@ -201,8 +205,8 @@ class ArrowPainter extends CustomPainter {
         ..isAntiAlias = true
         ..color = bodyColor.withValues(alpha: (0.18 * (1 - trailAmount)))
         ..strokeWidth = strokeWidth * 0.9
-        ..strokeCap = StrokeCap.butt
-        ..strokeJoin = StrokeJoin.miter
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
       canvas.drawPath(trail, trailPaint);
@@ -214,8 +218,8 @@ class ArrowPainter extends CustomPainter {
         ..isAntiAlias = true
         ..color = glowColor.withValues(alpha: 0.4 * opacity)
         ..strokeWidth = strokeWidth + 10
-        ..strokeCap = StrokeCap.butt
-        ..strokeJoin = StrokeJoin.miter
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
       canvas.drawPath(path, glowPaint);
@@ -226,8 +230,8 @@ class ArrowPainter extends CustomPainter {
       ..isAntiAlias = true
       ..color = bodyColor.withValues(alpha: opacity)
       ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.butt
-      ..strokeJoin = StrokeJoin.miter
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
     canvas.drawPath(path, bodyPaint);

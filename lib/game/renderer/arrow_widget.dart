@@ -17,6 +17,8 @@ class ArrowWidget extends StatefulWidget {
   final int gridSize;
   final ThemeModel theme;
   final bool isHinted;
+  /// Top-left offset of the compact visual grid within the touch board.
+  final Offset origin;
 
   const ArrowWidget({
     super.key,
@@ -25,6 +27,7 @@ class ArrowWidget extends StatefulWidget {
     required this.gridSize,
     required this.theme,
     required this.isHinted,
+    this.origin = Offset.zero,
   });
 
   @override
@@ -83,6 +86,7 @@ class ArrowWidgetState extends State<ArrowWidget>
     _motionPath = ArrowMotionPath.build(
       arrow: widget.arrow,
       cellSize: widget.cellSize,
+      origin: widget.origin,
     );
   }
 
@@ -100,10 +104,12 @@ class ArrowWidgetState extends State<ArrowWidget>
 
     if (oldWidget.cellSize != widget.cellSize ||
         oldWidget.arrow.points != widget.arrow.points ||
-        oldWidget.arrow.exitDirection != widget.arrow.exitDirection) {
+        oldWidget.arrow.exitDirection != widget.arrow.exitDirection ||
+        oldWidget.origin != widget.origin) {
       _motionPath = ArrowMotionPath.build(
         arrow: widget.arrow,
         cellSize: widget.cellSize,
+        origin: widget.origin,
       );
     }
 

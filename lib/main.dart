@@ -9,6 +9,7 @@ import 'data/models/player_progress.dart';
 import 'data/repositories/progress_repository.dart';
 import 'routes/app_router.dart';
 import 'services/ad_service.dart';
+import 'services/admob_service.dart';
 import 'services/analytics_service.dart';
 import 'services/audio_service.dart';
 import 'services/economy_service.dart';
@@ -52,12 +53,15 @@ void main() async {
   final hapticService = HapticService();
   Get.put<HapticService>(hapticService, permanent: true);
 
-  final audioService = NoOpAudioService();
+  final audioService = AudioPlayersService();
   Get.put<IAudioService>(audioService, permanent: true);
 
-  Get.put<IAdService>(NoOpAdService(), permanent: true);
-  Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);
   Get.put<IPurchaseService>(NoOpPurchaseService(), permanent: true);
+
+  final adService = AdMobService();
+  Get.put<IAdService>(adService, permanent: true);
+
+  Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);
 
   // Apply user's saved preferences
   final settings = storageService.settings;

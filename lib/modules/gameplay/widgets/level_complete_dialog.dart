@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../services/ad_service.dart';
+import '../../../services/economy_service.dart';
 import '../../../widgets/primary_button.dart';
 import '../../../widgets/secondary_button.dart';
 
@@ -32,6 +35,8 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
   late AnimationController _starsController;
   late Animation<double> _scaleAnim;
   final List<Animation<double>> _starAnims = [];
+  bool _hasDoubledCoins = false;
+  bool _isLoadingAd = false;
 
   @override
   void initState() {
@@ -181,7 +186,9 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
                         color: AppColors.coinGold, size: 20),
                     const SizedBox(width: 6),
                     Text(
-                      '+${25 + (widget.stars == 3 ? 10 : 0)} coins earned',
+                      _hasDoubledCoins
+                          ? '+${(25 + (widget.stars == 3 ? 10 : 0)) * 2} coins earned (2x Bonus!)'
+                          : '+${25 + (widget.stars == 3 ? 10 : 0)} coins earned',
                       style: const TextStyle(
                         color: AppColors.coinGoldDark,
                         fontWeight: FontWeight.w700,
@@ -192,7 +199,70 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+
+              // 2x Coins Rewarded Ad Button
+              if (!_hasDoubledCoins)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: GestureDetector(
+                    onTap: _isLoadingAd
+                        ? null
+                        : () async {
+                            setState(() {
+                              _isLoadingAd = true;
+                            });
+                            final baseCoins = 25 + (widget.stars == 3 ? 10 : 0);
+                            final adService = Get.find<IAdService>();
+                            final economy = Get.find<EconomyService>();
+                            final rewarded = await adService.showRewardedCoins();
+                            if (mounted) {
+                              setState(() {
+                                _isLoadingAd = false;
+                                if (rewarded) {
+                                  _hasDoubledCoins = true;
+                                  economy.addCoins(baseCoins);
+                                }
+                              });
+                            }
+                          },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.coinGold.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.movie_creation_rounded,
+                              color: Colors.white, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isLoadingAd ? 'Loading Ad...' : '2x Coins (Watch Ad)',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 12),
 
               // Buttons
               PrimaryButton(

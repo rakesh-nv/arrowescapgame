@@ -7,6 +7,7 @@ import '../../data/models/arrow_direction.dart';
 import '../../services/economy_service.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/coin_badge.dart';
+import '../ads/widgets/banner_ad_widget.dart';
 import 'home_controller.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -149,7 +150,7 @@ class HomeScreen extends StatelessWidget {
 
                         // Bottom nav
                         Padding(
-                          padding: const EdgeInsets.only(top: 16, bottom: 20),
+                          padding: const EdgeInsets.only(top: 12, bottom: 8),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -161,6 +162,10 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                         ),
+
+                        // Bottom Banner Ad
+                        const BannerAdWidget(),
+                        const SizedBox(height: 4),
                       ],
                     ),
                   ),

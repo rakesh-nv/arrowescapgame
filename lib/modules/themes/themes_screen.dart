@@ -86,31 +86,34 @@ class ThemesScreen extends StatelessWidget {
 
             // Theme grid
             Expanded(
-              child: Obx(() => GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.9,
-                    ),
-                    itemCount: controller.allThemes.length,
-                    itemBuilder: (_, i) {
-                      final theme = controller.allThemes[i];
-                      final isActive =
-                          controller.activeThemeId.value == theme.id;
-                      final isUnlocked = theme.isFree;
-                      return _ThemeCard(
-                        theme: theme,
-                        isActive: isActive,
-                        isUnlocked: isUnlocked,
-                        canAfford: economy.coins.value >= theme.coinsRequired,
-                        onTap: () => _onThemeTap(
-                            context, controller, economy, theme, isUnlocked),
-                      );
-                    },
-                  )),
+              child: Obx(() {
+                final activeId = controller.activeThemeId.value;
+                final coins = economy.coins.value;
+                return GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.9,
+                  ),
+                  itemCount: controller.allThemes.length,
+                  itemBuilder: (_, i) {
+                    final theme = controller.allThemes[i];
+                    final isActive = activeId == theme.id;
+                    final isUnlocked = theme.isFree;
+                    return _ThemeCard(
+                      theme: theme,
+                      isActive: isActive,
+                      isUnlocked: isUnlocked,
+                      canAfford: coins >= theme.coinsRequired,
+                      onTap: () => _onThemeTap(
+                          context, controller, economy, theme, isUnlocked),
+                    );
+                  },
+                );
+              }),
             ),
           ],
         ),

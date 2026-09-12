@@ -6,6 +6,7 @@ import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
 import '../solver/level_solver.dart';
 import 'dependency_analyzer.dart';
+import 'dot_grid_generator.dart';
 import 'shape_template.dart';
 
 typedef Cell = (int, int);
@@ -206,6 +207,13 @@ class LevelGenerator {
     required int seed,
     required Difficulty difficulty,
   }) {
+    final dotGridLevel = DotGridGenerator.generate(
+      levelNumber: levelNumber,
+      seed: seed,
+      difficulty: difficulty,
+    );
+    if (dotGridLevel != null) return dotGridLevel;
+
     final params = _params[difficulty] ?? _params[Difficulty.normal]!;
     final template = _templateFor(levelNumber, seed);
     final shapeMask = template.shapeTemplate.generateMask(params.gridSize);

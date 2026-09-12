@@ -2,7 +2,7 @@ name: arrowescapegame
 description: "Arrow Escape - A premium mobile puzzle game"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.12.2
@@ -27,6 +27,12 @@ dependencies:
   # Audio
   audioplayers: ^6.1.0
 
+  # URL Launcher
+  url_launcher: ^6.3.1
+
+  # Ads
+  google_mobile_ads: ^5.1.0
+
 
 dev_dependencies:
   flutter_test:
@@ -41,4 +47,6 @@ flutter:
 
   assets:
     - assets/audio/
+    - assets/sounds/
+
 

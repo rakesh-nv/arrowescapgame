@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../widgets/primary_button.dart';
@@ -167,6 +168,57 @@ class SettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 24),
+                    _buildSectionHeader('LEGAL'),
+                    const SizedBox(height: 10),
+                    _buildSettingsCard(
+                      children: [
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2563EB).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.shield_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 22,
+                            ),
+                          ),
+                          title: const Text(
+                            'Privacy Policy',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.navyDark,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'View our privacy policy',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.open_in_new_rounded,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          onTap: () async {
+                            final uri = Uri.parse(
+                              'https://smooth-hyacinth-f03.notion.site/Privacy-Policy-for-Arrow-Escape-3d64cd92f5a880b18f15dcc5840c7380',
+                            );
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 32),
                     // App Info
                     Center(
@@ -251,7 +303,6 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildSettingsCard({required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -264,7 +315,10 @@ class SettingsScreen extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Column(children: children),
+        child: Material(
+          color: Colors.white,
+          child: Column(children: children),
+        ),
       ),
     );
   }

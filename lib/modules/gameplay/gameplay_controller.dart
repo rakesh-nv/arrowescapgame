@@ -9,7 +9,9 @@ import '../../data/repositories/progress_repository.dart';
 import '../../data/repositories/theme_repository.dart';
 import '../../game/engine/game_engine.dart';
 import '../../game/models/tap_result.dart';
+import '../../services/ad_service.dart';
 import '../../services/analytics_service.dart';
+import '../../services/audio_service.dart';
 import '../../services/economy_service.dart';
 import '../../services/haptic_service.dart';
 
@@ -18,7 +20,10 @@ class GameplayController extends GetxController {
   final ProgressRepository _progress = Get.find<ProgressRepository>();
   final EconomyService _economy = Get.find<EconomyService>();
   final HapticService _haptic = Get.find<HapticService>();
+  final IAudioService _audio = Get.find<IAudioService>();
   final IAnalyticsService _analytics = Get.find<IAnalyticsService>();
+  final IAdService _adService = Get.find<IAdService>();
+
 
   // ── Observable state ──────────────────────────────────────────────────────
   final RxList<ArrowModel> arrows = <ArrowModel>[].obs;
@@ -105,7 +110,7 @@ class GameplayController extends GetxController {
 
     switch (result) {
       case TapResult.valid:
-        // No vibration or lag: arrow moves immediately and smoothly
+        _audio.playArrowEscape();
         animatingArrowId.value = arrowId;
         _analytics.logEvent(AnalyticsEvent.arrowTapped,
             params: {'arrowId': arrowId});
@@ -128,7 +133,9 @@ class GameplayController extends GetxController {
         break;
 
       case TapResult.blocked:
+        _audio.playBlocked();
         _analytics.logEvent(AnalyticsEvent.arrowBlocked);
+
 
         // Reset the blocked state after subtle bump animation
         Future.delayed(
@@ -217,7 +224,10 @@ class GameplayController extends GetxController {
 
       // Let the board glow and the reward travel before the dialog arrives.
       Future.delayed(const Duration(milliseconds: 650), () {
-        if (isCompleting.value) isComplete.value = true;
+        if (isCompleting.value) {
+          isComplete.value = true;
+          _adService.showInterstitial();
+        }
       });
     }
   }

@@ -1,16 +1,20 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
 import '../../data/models/theme_model.dart';
+import '../config/puzzle_config.dart';
 import 'arrow_widget.dart';
 
 /// The main puzzle board widget.
 ///
-/// Renders a clean square board with all continuous snake arrows.
-/// - No visible grid; logical cells are used only for paths and hit testing
-/// - Cell-accurate tap detection across the entire continuous snake
-/// - Responsive square board fitting available dimensions
-class ArrowBoardWidget extends StatelessWidget {
+/// Renders arrows on an infinite, pannable, zoomable canvas.
+/// - No fixed board border; arrows float on the background.
+/// - Pinch-to-zoom and drag-to-pan via [InteractiveViewer].
+/// - Cell-accurate tap detection inside the viewport transform —
+///   [GestureDetector.localPosition] is already in scene coordinates.
+class ArrowBoardWidget extends StatefulWidget {
   final List<ArrowModel> arrows;
   final int gridSize;
   final ThemeModel theme;
@@ -33,82 +37,157 @@ class ArrowBoardWidget extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final boardSize = constraints.maxWidth.clamp(
-          0.0,
-          constraints.maxHeight,
-        );
-        final cellSize = boardSize / gridSize;
+  State<ArrowBoardWidget> createState() => _ArrowBoardWidgetState();
+}
 
-        return Center(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (details) {
-              final pos = details.localPosition;
-              final col = (pos.dx / cellSize).floor();
-              final row = (pos.dy / cellSize).floor();
+class _ArrowBoardWidgetState extends State<ArrowBoardWidget> {
+  final TransformationController _tc = TransformationController();
+  bool _initialized = false;
 
-              if (row >= 0 && row < gridSize && col >= 0 && col < gridSize) {
-                // Find which active snake arrow occupies this tapped cell
-                for (final arrow in arrows) {
-                  if (arrow.state != ArrowState.removed &&
-                      arrow.state != ArrowState.escaping &&
-                      arrow.occupiedCells.contains((row, col))) {
-                    onArrowTap(arrow.id);
-                    break;
-                  }
-                }
-              }
-            },
-            child: AnimatedScale(
-              scale: isCompleting ? 1.012 : 1.0,
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
-              width: boardSize,
-              height: boardSize,
-              decoration: BoxDecoration(
-                color: theme.isDark
-                    ? const Color(0xFF1E293B)
-                    : const Color(0xFFF1F5F9), // Light gray/off-white board
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: theme.isDark
-                      ? Colors.white.withValues(
-                          alpha: isCompleting ? 0.22 : 0.08,
-                        )
-                      : (isCompleting
-                          ? theme.accentColor.withValues(alpha: 0.55)
-                          : const Color(0xFFE2E8F0)),
-                  width: 1.5,
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: Stack(
-                  children: [
-                    // Continuous snake arrows
-                    ...arrows.map((arrow) {
-                      return ArrowWidget(
-                        key: ValueKey(arrow.id),
-                        arrow: arrow,
-                        cellSize: cellSize,
-                        gridSize: gridSize,
-                        theme: theme,
-                        isHinted: arrow.id == hintedArrowId,
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              ),
-            ),
-            ),
-        );
-      },
+  @override
+  void dispose() {
+    _tc.dispose();
+    super.dispose();
+  }
+
+  /// Centre and scale the puzzle to fit ~88% of the viewport on first build.
+  void _initTransform(BoxConstraints constraints, double gridPx) {
+    if (_initialized) return;
+    _initialized = true;
+
+    final fit = min(
+          constraints.maxWidth / gridPx,
+          constraints.maxHeight / gridPx,
+        ) *
+        0.88;
+
+    // translate( tx, ty ) * scale( fit ) maps scene origin → screen centre
+    final tx = (constraints.maxWidth - gridPx * fit) / 2;
+    final ty = (constraints.maxHeight - gridPx * fit) / 2;
+
+    _tc.value = Matrix4(
+      fit, 0, 0, 0,
+      0, fit, 0, 0,
+      0, 0, 1, 0,
+      tx, ty, 0, 1,
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final config = PuzzleConfig.adaptive(
+        screenWidth: constraints.maxWidth,
+        screenHeight: constraints.maxHeight,
+        overrideGridSize: widget.gridSize,
+      );
+      final cellSize = config.cellSpacing;
+      final gridPx = cellSize * widget.gridSize;
+
+      _initTransform(constraints, gridPx);
+
+      // GestureDetector OUTSIDE InteractiveViewer so taps are not swallowed
+      // by the pan/zoom recogniser. We convert from screen-space to scene-space
+      // using _tc.toScene() before doing the grid hit-test.
+      return GestureDetector(
+        onTapUp: (details) {
+          final scene = _tc.toScene(details.localPosition);
+          final col = (scene.dx / cellSize).floor();
+          final row = (scene.dy / cellSize).floor();
+
+          if (row >= 0 &&
+              row < widget.gridSize &&
+              col >= 0 &&
+              col < widget.gridSize) {
+            for (final arrow in widget.arrows) {
+              if (arrow.state != ArrowState.removed &&
+                  arrow.state != ArrowState.escaping &&
+                  arrow.occupiedCells.contains((row, col))) {
+                widget.onArrowTap(arrow.id);
+                break;
+              }
+            }
+          }
+        },
+        child: InteractiveViewer(
+          transformationController: _tc,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          minScale: 0.10,
+          maxScale: 10.0,
+          constrained: false,
+          child: AnimatedScale(
+            scale: widget.isCompleting ? 1.012 : 1.0,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            child: SizedBox(
+              width: gridPx,
+              height: gridPx,
+              child: Stack(
+                children: [
+                  // Visible dot grid background (Rangoli / Kolam pattern dots)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _DotGridPainter(
+                        gridSize: widget.gridSize,
+                        cellSize: cellSize,
+                        dotColor: widget.theme.textColor.withValues(alpha: 0.32),
+                      ),
+                    ),
+                   ),
+                  ...widget.arrows.map(
+                    (arrow) => ArrowWidget(
+                      key: ValueKey(arrow.id), 
+                      arrow: arrow,
+                      cellSize: cellSize,
+                      gridSize: widget.gridSize,
+                      theme: widget.theme,
+                      isHinted: arrow.id == widget.hintedArrowId,
+                      origin: Offset.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
+
+/// Custom painter that renders the Rangoli / Kolam dot grid.
+class _DotGridPainter extends CustomPainter {
+  final int gridSize;
+  final double cellSize;
+  final Color dotColor;
+
+  const _DotGridPainter({
+    required this.gridSize,
+    required this.cellSize,
+    required this.dotColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = dotColor
+      ..isAntiAlias = true
+      ..style = PaintingStyle.fill;
+
+    final dotRadius = (cellSize * 0.06).clamp(1.8, 2.6);
+
+    for (var r = 0; r < gridSize; r++) {
+      for (var c = 0; c < gridSize; c++) {
+        final cx = (c + 0.5) * cellSize;
+        final cy = (r + 0.5) * cellSize;
+        canvas.drawCircle(Offset(cx, cy), dotRadius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotGridPainter oldDelegate) =>
+      oldDelegate.gridSize != gridSize ||
+      oldDelegate.cellSize != cellSize ||
+      oldDelegate.dotColor != dotColor;
 }

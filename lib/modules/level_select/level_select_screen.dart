@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_strings.dart';
 import '../../widgets/level_card.dart';
+import '../ads/widgets/banner_ad_widget.dart';
 import 'level_select_controller.dart';
 
 class LevelSelectScreen extends StatelessWidget {
@@ -100,6 +101,10 @@ class LevelSelectScreen extends StatelessWidget {
                 ],
               ),
             ),
+
+            // Bottom Banner Ad
+            const BannerAdWidget(),
+            const SizedBox(height: 4),
           ],
         ),
       ),
