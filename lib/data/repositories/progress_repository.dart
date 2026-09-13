@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/player_progress.dart';
 import '../../services/storage_service.dart';
+import '../../modules/level_select/level_select_controller.dart';
 
 /// Provides access to player progress with validation
 class ProgressRepository extends GetxService {
@@ -28,6 +29,8 @@ class ProgressRepository extends GetxService {
         levelNumber < AppConstants.totalLevels) {
       p.highestUnlockedLevel = levelNumber + 1;
     }
+
+    LevelSelectController.recordLevelCompletion(levelNumber);
 
     await _storage.saveProgress(p);
   }

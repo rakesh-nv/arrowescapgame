@@ -24,15 +24,13 @@ class LevelRepository {
 
     if (_cache.containsKey(n)) return _cache[n]!;
 
-    final difficulty = _difficultyForLevel(n);
     final seed = AppConstants.levelSeed(n);
 
     final level = LevelGenerator.generate(
           levelNumber: n,
           seed: seed,
-          difficulty: difficulty,
         ) ??
-        _fallbackLevel(n, difficulty);
+        _fallbackLevel(n, Difficulty.easy);
 
     _cache[n] = level;
     return level;
