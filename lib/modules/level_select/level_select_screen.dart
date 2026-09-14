@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
@@ -123,7 +122,6 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   void _checkAndRunProgressionAnimation() {
     final justCompleted = LevelSelectController.justCompletedLevel.value;
     final lastAnimated = LevelSelectController.lastAnimatedLevel;
-    final screenWidth = MediaQuery.of(context).size.width;
     final viewportHeight = MediaQuery.of(context).size.height;
 
     if (!_scrollController.hasClients) return;

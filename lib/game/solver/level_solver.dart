@@ -32,6 +32,7 @@ class LevelSolver {
     List<String> solution,
   ) {
     if (state.isEmpty) return true;
+    if (visited.length > 3000) return false;
 
     final hash = state.stateHash;
     if (visited.contains(hash)) return false;

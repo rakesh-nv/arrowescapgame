@@ -19,18 +19,70 @@ abstract class IAudioService {
 /// Concrete implementation using [AudioPlayer] from audioplayers package.
 /// Reuses player instances to prevent memory leaks and latency during rapid taps.
 class AudioPlayersService extends GetxService implements IAudioService {
+  static const String arrowSoundAsset = 'sounds/arrowsound.m4a';
+  static const String blockedSoundAsset =
+      'sounds/universfield-wrong-answer-beep-149895.mp3';
+
   bool _soundEnabled = true;
   bool _musicEnabled = true;
 
-  late final AudioPlayer _escapePlayer;
+  // Pool of players for arrow escape sound to handle rapid consecutive taps smoothly
+  static const int _escapePoolSize = 3;
+  final List<AudioPlayer> _escapePlayers = [];
+  int _currentEscapeIndex = 0;
+
   late final AudioPlayer _blockedPlayer;
+  late final AudioPlayer _uiPlayer;
+
+  bool _isInitialized = false;
 
   bool get isSoundEnabled => _soundEnabled;
   bool get isMusicEnabled => _musicEnabled;
 
   AudioPlayersService() {
-    _escapePlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-    _blockedPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+    _initPlayers();
+  }
+
+  void _initPlayers() {
+    try {
+      for (int i = 0; i < _escapePoolSize; i++) {
+        _escapePlayers.add(AudioPlayer());
+      }
+      _blockedPlayer = AudioPlayer();
+      _uiPlayer = AudioPlayer();
+      _isInitialized = true;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('AudioPlayersService player creation error: $e');
+      }
+    }
+  }
+
+  Future<void> init() async {
+    try {
+      // Configure global audio context for games (ambient mode, non-intrusive focus)
+      await AudioPlayer.global.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            isSpeakerphoneOn: false,
+            stayAwake: false,
+            contentType: AndroidContentType.sonification,
+            usageType: AndroidUsageType.game,
+            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.ambient,
+            options: const {
+              AVAudioSessionOptions.mixWithOthers,
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('AudioPlayersService global audio context error: $e');
+      }
+    }
   }
 
   @override
@@ -45,10 +97,12 @@ class AudioPlayersService extends GetxService implements IAudioService {
 
   @override
   Future<void> playArrowEscape() async {
-    if (!_soundEnabled) return;
+    if (!_soundEnabled || !_isInitialized || _escapePlayers.isEmpty) return;
     try {
-      await _escapePlayer.stop();
-      await _escapePlayer.play(AssetSource('sounds/arrowsound.m4a'));
+      final player = _escapePlayers[_currentEscapeIndex];
+      _currentEscapeIndex = (_currentEscapeIndex + 1) % _escapePlayers.length;
+      await player.stop();
+      await player.play(AssetSource(arrowSoundAsset));
     } catch (e) {
       if (kDebugMode) {
         debugPrint('AudioService playArrowEscape error: $e');
@@ -58,10 +112,10 @@ class AudioPlayersService extends GetxService implements IAudioService {
 
   @override
   Future<void> playBlocked() async {
-    if (!_soundEnabled) return;
+    if (!_soundEnabled || !_isInitialized) return;
     try {
       await _blockedPlayer.stop();
-      await _blockedPlayer.play(AssetSource('sounds/universfield-wrong-answer-beep-149895.mp3'));
+      await _blockedPlayer.play(AssetSource(blockedSoundAsset));
     } catch (e) {
       if (kDebugMode) {
         debugPrint('AudioService playBlocked error: $e');
@@ -69,9 +123,18 @@ class AudioPlayersService extends GetxService implements IAudioService {
     }
   }
 
-
   @override
-  Future<void> playButtonClick() async {}
+  Future<void> playButtonClick() async {
+    if (!_soundEnabled || !_isInitialized) return;
+    try {
+      await _uiPlayer.stop();
+      await _uiPlayer.play(AssetSource(arrowSoundAsset));
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('AudioService playButtonClick error: $e');
+      }
+    }
+  }
 
   @override
   Future<void> playLevelComplete() async {}
@@ -84,10 +147,19 @@ class AudioPlayersService extends GetxService implements IAudioService {
 
   @override
   void dispose() {
-    _escapePlayer.dispose();
-    _blockedPlayer.dispose();
+    for (final player in _escapePlayers) {
+      try {
+        player.dispose();
+      } catch (_) {}
+    }
+    _escapePlayers.clear();
+    try {
+      _blockedPlayer.dispose();
+    } catch (_) {}
+    try {
+      _uiPlayer.dispose();
+    } catch (_) {}
   }
-
 
   @override
   void onClose() {

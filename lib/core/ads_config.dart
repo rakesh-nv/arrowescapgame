@@ -1,11 +1,36 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 /// Centralized configuration for Google Mobile Ads (AdMob).
 ///
 /// Toggle [isTestMode] to `false` when preparing for production Play Store release.
 class AdsConfig {
   /// Toggle test mode vs production IDs.
-  static const bool isTestMode = true;
+  static const bool isTestMode = false;
+
+  /// The currently installed Google Mobile Ads runtime attempts to use the
+  /// Display Hash API on Android 11 and older. That framework API was added in
+  /// Android 12, and loading an ad on an older device can terminate the app.
+  ///
+  /// Keep ads off on those devices until the upstream runtime no longer has
+  /// this compatibility issue. Gameplay remains fully available through the
+  /// app's no-op ad service.
+  static const MethodChannel _deviceChannel =
+      MethodChannel('com.arrowescape.arrowescapegame/device');
+
+  static Future<bool> isSupportedDevice() async {
+    if (!Platform.isAndroid) return true;
+
+    try {
+      final sdkInt = await _deviceChannel.invokeMethod<int>('sdkInt');
+      return sdkInt != null && sdkInt >= 31;
+    } catch (_) {
+      // A failure to determine compatibility must never let native ads crash
+      // the game, so use the safe no-ad path.
+      return false;
+    }
+  }
 
   // ── Android Test IDs ──────────────────────────────────────────────────────
   static const String _androidBannerTestId = 'ca-app-pub-3940256099942544/6300978111';

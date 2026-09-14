@@ -79,22 +79,22 @@ class _GameplayScreenState extends State<GameplayScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => LevelCompleteDialog(
+      builder: (dialogContext) => LevelCompleteDialog(
         stars: _controller.calculatedStars,
         levelNumber: _controller.currentLevelNumber,
         moves: _controller.moves.value,
         onNextLevel: () {
-          Get.back();
+          Navigator.of(dialogContext).pop();
           _dialogShown = false;
           _controller.loadLevel(_controller.currentLevelNumber + 1);
         },
         onReplay: () {
-          Get.back();
+          Navigator.of(dialogContext).pop();
           _dialogShown = false;
           _controller.onReset();
         },
         onHome: () {
-          Get.back();
+          Navigator.of(dialogContext).pop();
           Get.offNamed('/home');
         },
       ),
@@ -163,18 +163,27 @@ class _GameplayScreenState extends State<GameplayScreen>
             child: AnimatedBuilder(
               animation: _rewardController,
               builder: (context, _) {
-                final t = Curves.easeInOutCubic.transform(_rewardController.value);
+                final t = Curves.easeInOutCubic.transform(
+                  _rewardController.value,
+                );
                 return Stack(
                   children: List.generate(3, (index) {
                     final stagger = (t - index * 0.11).clamp(0.0, 1.0);
                     final progress = Curves.easeOutCubic.transform(stagger);
                     return Positioned(
-                      left: MediaQuery.of(context).size.width * (0.48 - progress * (0.18 + index * 0.035)),
-                      top: MediaQuery.of(context).size.height * (0.53 - progress * (0.38 + index * 0.025)),
+                      left:
+                          MediaQuery.of(context).size.width *
+                          (0.48 - progress * (0.18 + index * 0.035)),
+                      top:
+                          MediaQuery.of(context).size.height *
+                          (0.53 - progress * (0.38 + index * 0.025)),
                       child: Opacity(
                         opacity: (1 - progress * 0.35) * (stagger > 0 ? 1 : 0),
-                        child: const Icon(Icons.monetization_on_rounded,
-                            color: AppColors.coinGold, size: 18),
+                        child: const Icon(
+                          Icons.monetization_on_rounded,
+                          color: AppColors.coinGold,
+                          size: 18,
+                        ),
                       ),
                     );
                   }),
@@ -275,10 +284,8 @@ class _GameplayScreenState extends State<GameplayScreen>
             hintedArrowId: _controller.hintedArrowId.value.isEmpty
                 ? null
                 : _controller.hintedArrowId.value,
-            newlyAvailableArrowIds:
-                _controller.newlyAvailableArrowIds.toSet(),
-            hasEscapeInProgress:
-                _controller.animatingArrowId.value.isNotEmpty,
+            newlyAvailableArrowIds: _controller.newlyAvailableArrowIds.toSet(),
+            hasEscapeInProgress: _controller.animatingArrowId.value.isNotEmpty,
             isCompleting: _controller.isCompleting.value,
             onArrowTap: _controller.onArrowTap,
           );

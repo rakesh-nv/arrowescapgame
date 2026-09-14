@@ -3,6 +3,7 @@ class AppConstants {
   AppConstants._();
 
   // Game
+  static const int fixedGridSize = 16;
   static const int startingCoins = 100;
   static const int startingHints = 3;
   static const int startingLives = 3;
@@ -37,6 +38,7 @@ class AppConstants {
   /// Touch response begins immediately for smooth, responsive movement.
   static const int arrowPressDelayMs = 0;
   static const int arrowFlightDurationMs = 400;
+
   /// Longer paths get a little more time to remain readable, without making
   /// short and medium arrows feel sluggish.
   static int arrowFlightDurationForLength(int length) =>

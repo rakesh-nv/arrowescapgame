@@ -19,9 +19,9 @@ class ArrowMotionPath {
     required PathMetric? metric,
     required this.length,
     required this.cellSize,
-  })  : _anchors = anchors,
-        _exitDirection = exitDirection,
-        _metric = metric;
+  }) : _anchors = anchors,
+       _exitDirection = exitDirection,
+       _metric = metric;
 
   factory ArrowMotionPath.build({
     required ArrowModel arrow,
@@ -108,8 +108,9 @@ class ArrowMotionPath {
 
   Offset directionAt(double distance) {
     if (_metric == null || distance >= length) return _exitDirection;
-    final vector =
-        _metric.getTangentForOffset(distance.clamp(0.0, length))!.vector;
+    final vector = _metric
+        .getTangentForOffset(distance.clamp(0.0, length))!
+        .vector;
     return vector / vector.distance;
   }
 }
@@ -133,6 +134,7 @@ class ArrowPainter extends CustomPainter {
   /// Null while idle. During escape every point follows the point ahead of it
   /// through the bends, producing the reference snake/uncoiling motion.
   final double? snakeProgress;
+
   /// Same timeline as [snakeProgress]; separated to keep trail drawing optional.
   final double? trailProgress;
   final Offset shakeOffset;
@@ -174,7 +176,10 @@ class ArrowPainter extends CustomPainter {
 
     // Build the continuous snake path from tail to head
     final path = Path();
-    path.moveTo(animated[0].dx + shakeOffset.dx, animated[0].dy + shakeOffset.dy);
+    path.moveTo(
+      animated[0].dx + shakeOffset.dx,
+      animated[0].dy + shakeOffset.dy,
+    );
 
     for (int i = 1; i < animated.length; i++) {
       path.lineTo(
@@ -194,7 +199,8 @@ class ArrowPainter extends CustomPainter {
     if (trailProgress != null && trailProgress! > 0.04) {
       final trailAmount = (trailProgress! * 0.72).clamp(0.0, 0.72);
       final tailDirection = motionPath.directionAt(shift);
-      final tail = animated.first + shakeOffset - tailDirection * (cellSize * 1.25);
+      final tail =
+          animated.first + shakeOffset - tailDirection * (cellSize * 1.25);
       final trail = Path()
         ..moveTo(tail.dx, tail.dy)
         ..lineTo(
@@ -267,8 +273,14 @@ class ArrowPainter extends CustomPainter {
     final normal = Offset(-direction.dy, direction.dx);
     final base = tip - direction * hs;
     path.moveTo(tip.dx, tip.dy);
-    path.lineTo(base.dx + normal.dx * halfWidth, base.dy + normal.dy * halfWidth);
-    path.lineTo(base.dx - normal.dx * halfWidth, base.dy - normal.dy * halfWidth);
+    path.lineTo(
+      base.dx + normal.dx * halfWidth,
+      base.dy + normal.dy * halfWidth,
+    );
+    path.lineTo(
+      base.dx - normal.dx * halfWidth,
+      base.dy - normal.dy * halfWidth,
+    );
 
     path.close();
     canvas.drawPath(path, paint);

@@ -55,103 +55,100 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget> {
     if (_initialized) return;
     _initialized = true;
 
-    final fit = min(
-          constraints.maxWidth / gridPx,
-          constraints.maxHeight / gridPx,
-        ) *
+    final fit =
+        min(constraints.maxWidth / gridPx, constraints.maxHeight / gridPx) *
         0.88;
 
     // translate( tx, ty ) * scale( fit ) maps scene origin → screen centre
     final tx = (constraints.maxWidth - gridPx * fit) / 2;
     final ty = (constraints.maxHeight - gridPx * fit) / 2;
 
-    _tc.value = Matrix4(
-      fit, 0, 0, 0,
-      0, fit, 0, 0,
-      0, 0, 1, 0,
-      tx, ty, 0, 1,
-    );
+    _tc.value = Matrix4(fit, 0, 0, 0, 0, fit, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
   }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final config = PuzzleConfig.adaptive(
-        screenWidth: constraints.maxWidth,
-        screenHeight: constraints.maxHeight,
-        overrideGridSize: widget.gridSize,
-      );
-      final cellSize = config.cellSpacing;
-      final gridPx = cellSize * widget.gridSize;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final config = PuzzleConfig.adaptive(
+          screenWidth: constraints.maxWidth,
+          screenHeight: constraints.maxHeight,
+          overrideGridSize: widget.gridSize,
+        );
+        final cellSize = config.cellSpacing;
+        final gridPx = cellSize * widget.gridSize;
 
-      _initTransform(constraints, gridPx);
+        _initTransform(constraints, gridPx);
 
-      // GestureDetector OUTSIDE InteractiveViewer so taps are not swallowed
-      // by the pan/zoom recogniser. We convert from screen-space to scene-space
-      // using _tc.toScene() before doing the grid hit-test.
-      return GestureDetector(
-        onTapUp: (details) {
-          final scene = _tc.toScene(details.localPosition);
-          final col = (scene.dx / cellSize).floor();
-          final row = (scene.dy / cellSize).floor();
+        // GestureDetector OUTSIDE InteractiveViewer so taps are not swallowed
+        // by the pan/zoom recogniser. We convert from screen-space to scene-space
+        // using _tc.toScene() before doing the grid hit-test.
+        return GestureDetector(
+          onTapUp: (details) {
+            final scene = _tc.toScene(details.localPosition);
+            final col = (scene.dx / cellSize).floor();
+            final row = (scene.dy / cellSize).floor();
 
-          if (row >= 0 &&
-              row < widget.gridSize &&
-              col >= 0 &&
-              col < widget.gridSize) {
-            for (final arrow in widget.arrows) {
-              if (arrow.state != ArrowState.removed &&
-                  arrow.state != ArrowState.escaping &&
-                  arrow.occupiedCells.contains((row, col))) {
-                widget.onArrowTap(arrow.id);
-                break;
+            if (row >= 0 &&
+                row < widget.gridSize &&
+                col >= 0 &&
+                col < widget.gridSize) {
+              for (final arrow in widget.arrows) {
+                if (arrow.state != ArrowState.removed &&
+                    arrow.state != ArrowState.escaping &&
+                    arrow.occupiedCells.contains((row, col))) {
+                  widget.onArrowTap(arrow.id);
+                  break;
+                }
               }
             }
-          }
-        },
-        child: InteractiveViewer(
-          transformationController: _tc,
-          boundaryMargin: const EdgeInsets.all(double.infinity),
-          minScale: 0.10,
-          maxScale: 10.0,
-          constrained: false,
-          child: AnimatedScale(
-            scale: widget.isCompleting ? 1.012 : 1.0,
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            child: SizedBox(
-              width: gridPx,
-              height: gridPx,
-              child: Stack(
-                children: [
-                  // Visible dot grid background (Rangoli / Kolam pattern dots)
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _DotGridPainter(
-                        gridSize: widget.gridSize,
-                        cellSize: cellSize,
-                        dotColor: widget.theme.textColor.withValues(alpha: 0.32),
+          },
+          child: InteractiveViewer(
+            transformationController: _tc,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            minScale: 0.10,
+            maxScale: 10.0,
+            constrained: false,
+            child: AnimatedScale(
+              scale: widget.isCompleting ? 1.012 : 1.0,
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              child: SizedBox(
+                width: gridPx,
+                height: gridPx,
+                child: Stack(
+                  children: [
+                    // Visible dot grid background (Rangoli / Kolam pattern dots)
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _DotGridPainter(
+                          gridSize: widget.gridSize,
+                          cellSize: cellSize,
+                          dotColor: widget.theme.textColor.withValues(
+                            alpha: 0.32,
+                          ),
+                        ),
                       ),
                     ),
-                   ),
-                  ...widget.arrows.map(
-                    (arrow) => ArrowWidget(
-                      key: ValueKey(arrow.id), 
-                      arrow: arrow,
-                      cellSize: cellSize,
-                      gridSize: widget.gridSize,
-                      theme: widget.theme,
-                      isHinted: arrow.id == widget.hintedArrowId,
-                      origin: Offset.zero,
+                    ...widget.arrows.map(
+                      (arrow) => ArrowWidget(
+                        key: ValueKey(arrow.id),
+                        arrow: arrow,
+                        cellSize: cellSize,
+                        gridSize: widget.gridSize,
+                        theme: widget.theme,
+                        isHinted: arrow.id == widget.hintedArrowId,
+                        origin: Offset.zero,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 

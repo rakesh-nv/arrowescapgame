@@ -64,14 +64,14 @@ class GameplayController extends GetxController {
   }
 
   void loadLevel(int lvl) {
+    isComplete.value = false;
+    isCompleting.value = false;
     _syncTheme();
     final level = LevelRepository.getLevel(lvl);
     _level.value = level;
     levelNumber.value = lvl;
     _engine.loadLevel(level);
     _syncState();
-    isComplete.value = false;
-    isCompleting.value = false;
     newlyAvailableArrowIds.clear();
     isTutorialLevel.value = lvl == 1;
 

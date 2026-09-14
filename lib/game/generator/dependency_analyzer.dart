@@ -6,23 +6,41 @@ import 'shape_template.dart';
 
 class LevelMetrics {
   final int arrowCount;
+  final int occupiedCells;
   final double occupancy;
   final double averagePathLength;
   final double averageBends;
   final int dependencyDepth;
   final double branchingFactor;
+  final int connectedComponents;
   final Map<ArrowDirection, double> directionDistribution;
   final Map<String, double> lengthDistribution;
+  final int shortCount;
+  final int mediumCount;
+  final int longCount;
+  final int veryLongCount;
+  final int extraLongCount;
+  final int minimumPathLength;
+  final int longestPathLength;
 
   const LevelMetrics({
     required this.arrowCount,
+    required this.occupiedCells,
     required this.occupancy,
     required this.averagePathLength,
     required this.averageBends,
     required this.dependencyDepth,
     required this.branchingFactor,
+    required this.connectedComponents,
     required this.directionDistribution,
     required this.lengthDistribution,
+    required this.shortCount,
+    required this.mediumCount,
+    required this.longCount,
+    required this.veryLongCount,
+    required this.extraLongCount,
+    required this.minimumPathLength,
+    required this.longestPathLength,
   });
 
   @override
@@ -30,10 +48,11 @@ class LevelMetrics {
     final dirs = directionDistribution.entries
         .map((e) => '${_dirSymbol(e.key)}:${(e.value * 100).toStringAsFixed(0)}%')
         .join(' ');
-    return '$arrowCount arrows | ${(occupancy * 100).toStringAsFixed(1)}% occ | '
-        'avgLen:${averagePathLength.toStringAsFixed(1)} | '
-        'avgBends:${averageBends.toStringAsFixed(1)} | '
-        'depth:$dependencyDepth | dirs:[$dirs]';
+    return '$arrowCount arrows | $occupiedCells cells (${(occupancy * 100).toStringAsFixed(1)}%) | '
+        'avgLen:${averagePathLength.toStringAsFixed(1)} | maxLen:$longestPathLength | '
+        'short:$shortCount med:$mediumCount long:$longCount '
+        'vLong:$veryLongCount xLong:$extraLongCount | '
+        'depth:$dependencyDepth | comps:$connectedComponents | dirs:[$dirs]';
   }
 
   static String _dirSymbol(ArrowDirection dir) {
@@ -62,13 +81,22 @@ class DependencyAnalyzer {
     if (arrows.isEmpty) {
       return const LevelMetrics(
         arrowCount: 0,
+        occupiedCells: 0,
         occupancy: 0,
         averagePathLength: 0,
         averageBends: 0,
         dependencyDepth: 0,
         branchingFactor: 0,
+        connectedComponents: 0,
         directionDistribution: {},
         lengthDistribution: {},
+        shortCount: 0,
+        mediumCount: 0,
+        longCount: 0,
+        veryLongCount: 0,
+        extraLongCount: 0,
+        minimumPathLength: 0,
+        longestPathLength: 0,
       );
     }
 
@@ -94,20 +122,32 @@ class DependencyAnalyzer {
         dir: (dirCounts[dir] ?? 0) / arrows.length,
     };
 
-    // Length distribution: short (2-3), medium (4-6), long (7-10), veryLong (11+)
+    // Length distribution in actual grid cells.
     var shortCount = 0;
     var mediumCount = 0;
     var longCount = 0;
     var veryLongCount = 0;
+    var extraLongCount = 0;
+    var minimumPathLen = arrows.first.length;
+    var longestPathLen = 0;
+
     for (final a in arrows) {
-      if (a.length <= 3) {
+      if (a.length > longestPathLen) {
+        longestPathLen = a.length;
+      }
+      if (a.length < minimumPathLen) {
+        minimumPathLen = a.length;
+      }
+      if (a.length <= 4) {
         shortCount++;
-      } else if (a.length <= 6) {
+      } else if (a.length <= 14) {
         mediumCount++;
-      } else if (a.length <= 10) {
+      } else if (a.length <= 22) {
         longCount++;
-      } else {
+      } else if (a.length <= 32) {
         veryLongCount++;
+      } else {
+        extraLongCount++;
       }
     }
     final lenDist = {
@@ -115,10 +155,10 @@ class DependencyAnalyzer {
       'medium': mediumCount / arrows.length,
       'long': longCount / arrows.length,
       'veryLong': veryLongCount / arrows.length,
+      'extraLong': extraLongCount / arrows.length,
     };
 
     // Dependency graph: which arrows block which
-    // arrow B blocks arrow A if B occupies a cell on A's exit ray
     final cellToArrow = <Cell, String>{};
     for (final a in arrows) {
       for (final c in a.occupiedCells) {
@@ -126,9 +166,7 @@ class DependencyAnalyzer {
       }
     }
 
-    // blockers[A] = set of arrows that block A (must leave before A can leave)
     final blockers = <String, Set<String>>{for (final a in arrows) a.id: {}};
-    // blockedBy[B] = set of arrows blocked by B (freed when B leaves)
     final blockedBy = <String, Set<String>>{for (final a in arrows) a.id: {}};
 
     for (final a in arrows) {
@@ -146,15 +184,15 @@ class DependencyAnalyzer {
       }
     }
 
-    // Branching factor: average number of arrows unblocked when an arrow escapes
+    // Branching factor
     final branching = blockedBy.values.isEmpty
         ? 0.0
         : blockedBy.values.fold<int>(0, (s, b) => s + b.length) / arrows.length;
 
-    // Dependency depth: compute longest chain using memoized DFS
+    // Dependency depth
     final depthMemo = <String, int>{};
     int getDepth(String arrowId, Set<String> visiting) {
-      if (visiting.contains(arrowId)) return 1; // cycle guard
+      if (visiting.contains(arrowId)) return 1;
       if (depthMemo.containsKey(arrowId)) return depthMemo[arrowId]!;
 
       visiting.add(arrowId);
@@ -174,15 +212,58 @@ class DependencyAnalyzer {
       maxDepth = max(maxDepth, getDepth(a.id, {}));
     }
 
+    // Connected components of the puzzle layout graph
+    final adj = <String, Set<String>>{for (final a in arrows) a.id: {}};
+    for (final a in arrows) {
+      adj[a.id]!.addAll(blockers[a.id]!);
+      adj[a.id]!.addAll(blockedBy[a.id]!);
+      for (final cell in a.occupiedCells) {
+        for (final d in const <Cell>[(-1, 0), (1, 0), (0, -1), (0, 1)]) {
+          final n = (cell.$1 + d.$1, cell.$2 + d.$2);
+          final neighborArrow = cellToArrow[n];
+          if (neighborArrow != null && neighborArrow != a.id) {
+            adj[a.id]!.add(neighborArrow);
+            adj[neighborArrow]!.add(a.id);
+          }
+        }
+      }
+    }
+
+    final visitedComp = <String>{};
+    var compCount = 0;
+    for (final a in arrows) {
+      if (visitedComp.add(a.id)) {
+        compCount++;
+        final q = [a.id];
+        while (q.isNotEmpty) {
+          final curr = q.removeLast();
+          for (final neighbor in adj[curr]!) {
+            if (visitedComp.add(neighbor)) {
+              q.add(neighbor);
+            }
+          }
+        }
+      }
+    }
+
     return LevelMetrics(
       arrowCount: arrows.length,
+      occupiedCells: totalOccupied.length,
       occupancy: occupancy,
       averagePathLength: avgLen,
       averageBends: avgBends,
       dependencyDepth: maxDepth,
       branchingFactor: branching,
+      connectedComponents: compCount,
       directionDistribution: dirDist,
       lengthDistribution: lenDist,
+      shortCount: shortCount,
+      mediumCount: mediumCount,
+      longCount: longCount,
+      veryLongCount: veryLongCount,
+      extraLongCount: extraLongCount,
+      minimumPathLength: minimumPathLen,
+      longestPathLength: longestPathLen,
     );
   }
 }

@@ -1,24 +1,32 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
-import 'data/models/game_settings.dart';
-import 'data/models/player_progress.dart';
-import 'data/repositories/progress_repository.dart';
 import 'routes/app_router.dart';
-import 'services/ad_service.dart';
-import 'services/admob_service.dart';
-import 'services/analytics_service.dart';
-import 'services/audio_service.dart';
-import 'services/economy_service.dart';
-import 'services/haptic_service.dart';
-import 'services/purchase_service.dart';
-import 'services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Catch unhandled font fetch network errors so unstable connections never crash the game
+  FlutterError.onError = (FlutterErrorDetails details) {
+    if (details.exception.toString().contains('Failed to load font') ||
+        details.exception.toString().contains('ClientException')) {
+      return;
+    }
+    FlutterError.presentError(details);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (error.toString().contains('Failed to load font') ||
+        error.toString().contains('ClientException')) {
+      return true;
+    }
+    return false;
+  };
+
   // Force portrait orientation for mobile game UX
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -32,42 +40,6 @@ void main() async {
       statusBarIconBrightness: Brightness.dark,
     ),
   );
-
-  // Initialize Hive local database and register type adapters
-  await Hive.initFlutter();
-  Hive.registerAdapter(PlayerProgressAdapter());
-  Hive.registerAdapter(GameSettingsAdapter());
-
-  // Initialize and register core storage
-  final storageService = StorageService();
-  await storageService.init();
-  Get.put<StorageService>(storageService, permanent: true);
-
-  // Initialize repositories and services
-  final progressRepo = ProgressRepository(storageService);
-  Get.put<ProgressRepository>(progressRepo, permanent: true);
-
-  final economyService = EconomyService(storageService);
-  Get.put<EconomyService>(economyService, permanent: true);
-
-  final hapticService = HapticService();
-  Get.put<HapticService>(hapticService, permanent: true);
-
-  final audioService = AudioPlayersService();
-  Get.put<IAudioService>(audioService, permanent: true);
-
-  Get.put<IPurchaseService>(NoOpPurchaseService(), permanent: true);
-
-  final adService = AdMobService();
-  Get.put<IAdService>(adService, permanent: true);
-
-  Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);
-
-  // Apply user's saved preferences
-  final settings = storageService.settings;
-  audioService.setEnabled(settings.soundOn);
-  audioService.setMusicEnabled(settings.musicOn);
-  hapticService.setEnabled(settings.hapticsOn);
 
   runApp(const ArrowEscapeApp());
 }

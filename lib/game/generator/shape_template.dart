@@ -16,6 +16,19 @@ enum PatternType {
   interlocked,
   randomGeometric,
   extremeCombination,
+  heart,
+  butterfly,
+  crown,
+  cat,
+  snake,
+  hexagon,
+  flower,
+  cross,
+  infinity,
+  lightning,
+  rocket,
+  bow,
+  swirl,
 }
 
 enum ShapeType {
@@ -107,7 +120,10 @@ class ShapeTemplate {
         comp.add(current);
         for (final delta in const <Cell>[(-1, 0), (1, 0), (0, -1), (0, 1)]) {
           final next = (current.$1 + delta.$1, current.$2 + delta.$2);
-          if (next.$1 >= 0 && next.$1 < size && next.$2 >= 0 && next.$2 < size) {
+          if (next.$1 >= 0 &&
+              next.$1 < size &&
+              next.$2 >= 0 &&
+              next.$2 < size) {
             if (mask.contains(next) && visited.add(next)) {
               queue.add(next);
             }
@@ -137,14 +153,14 @@ class PatternGenerator {
     final cy = (gridSize - 1) / 2.0;
     final s = max(1.0, (gridSize - 1) / 2.0);
 
-    // Randomize geometry parameters
-    final scale = 0.78 + rng.nextDouble() * 0.16; // 0.78 - 0.94
+    // Scale shapes to utilize the entire 14x14 playable grid
+    final scale = 0.92 + rng.nextDouble() * 0.08; // 0.92 - 1.00
     final rotationAngle = (rng.nextInt(4)) * (pi / 2.0); // 0, 90, 180, 270 deg
     final flipX = rng.nextBool();
     final flipY = rng.nextBool();
     final starPoints = rng.nextBool() ? 5 : 6;
-    final innerRatio = 0.32 + rng.nextDouble() * 0.18; // 0.32 - 0.50
-    final outerRadius = 0.88 + rng.nextDouble() * 0.08;
+    final innerRatio = 0.15 + rng.nextDouble() * 0.10; // thin ring cutouts
+    final outerRadius = 0.92 + rng.nextDouble() * 0.06;
 
     final cosA = cos(rotationAngle);
     final sinA = sin(rotationAngle);
@@ -213,7 +229,9 @@ class PatternGenerator {
         final angle = (theta - pi / 2) % (2 * pi / starPoints);
         final normalized = angle < 0 ? angle + 2 * pi / starPoints : angle;
         final psi = (normalized - pi / starPoints).abs() / (pi / starPoints);
-        final maxR = (outerRadius * 0.46) + (outerRadius - outerRadius * 0.46) * (1.0 - psi);
+        final maxR =
+            (outerRadius * 0.46) +
+            (outerRadius - outerRadius * 0.46) * (1.0 - psi);
         return rDist <= maxR;
 
       case PatternType.square:
@@ -222,7 +240,8 @@ class PatternGenerator {
       case PatternType.spiral:
         final spiralR = (theta / (2 * pi) + 1.5) * 0.28;
         final distFromSpiral = (rDist - (spiralR % 0.45)).abs();
-        return rDist <= outerRadius && (distFromSpiral <= 0.22 || rDist <= 0.45);
+        return rDist <= outerRadius &&
+            (distFromSpiral <= 0.22 || rDist <= 0.45);
 
       case PatternType.ring:
         return rDist <= outerRadius && rDist >= (outerRadius * innerRatio);
@@ -257,7 +276,8 @@ class PatternGenerator {
         return inDiamond;
 
       case PatternType.interlocked:
-        final inOuter = (u.abs() + v.abs()) <= 1.05 && u.abs() <= 0.85 && v.abs() <= 0.85;
+        final inOuter =
+            (u.abs() + v.abs()) <= 1.05 && u.abs() <= 0.85 && v.abs() <= 0.85;
         return inOuter;
 
       case PatternType.randomGeometric:
@@ -268,6 +288,69 @@ class PatternGenerator {
         final inSquare = u.abs() <= outerRadius && v.abs() <= outerRadius;
         final inRing = rDist <= 0.85 && rDist >= 0.30;
         return inSquare && inRing;
+
+      case PatternType.heart:
+        final x = u * 1.1;
+        final y = v * 1.1 + 0.15;
+        final a = x * x + y * y - 0.7;
+        return (a * a * a - x * x * y * y * y) <= 0.0;
+
+      case PatternType.butterfly:
+        final bR = 0.45 + 0.35 * cos(2 * theta) * sin(4 * theta).abs();
+        return rDist <= bR && u.abs() <= 0.9 && v.abs() <= 0.9;
+
+      case PatternType.crown:
+        final inBody = u.abs() <= 0.85 && v >= -0.75 && v <= 0.3;
+        final inSpike = v > 0.3 && (v - 0.3) <= (0.55 - u.abs() * 0.4);
+        return inBody || inSpike;
+
+      case PatternType.cat:
+        final inHead = rDist <= 0.75;
+        final inLeftEar =
+            u <= -0.2 && u >= -0.8 && v >= 0.3 && v <= (1.0 + (u + 0.5) * 1.2);
+        final inRightEar =
+            u >= 0.2 && u <= 0.8 && v >= 0.3 && v <= (1.0 - (u - 0.5) * 1.2);
+        return inHead || inLeftEar || inRightEar;
+
+      case PatternType.snake:
+        final sY = sin(u * pi * 1.5) * 0.45;
+        return u.abs() <= 0.9 && (v - sY).abs() <= 0.40;
+
+      case PatternType.hexagon:
+        return u.abs() <= 0.85 && (u.abs() * 0.5 + v.abs() * 0.866) <= 0.85;
+
+      case PatternType.flower:
+        final fR = 0.45 + 0.40 * cos(3 * theta).abs();
+        return rDist <= fR;
+
+      case PatternType.cross:
+        return (u.abs() <= 0.35 && v.abs() <= 0.9) ||
+            (u.abs() <= 0.9 && v.abs() <= 0.35);
+
+      case PatternType.infinity:
+        final inf = pow(u * u + v * v, 2) - 0.8 * (u * u - v * v);
+        return inf <= 0.12 && u.abs() <= 0.95 && v.abs() <= 0.6;
+
+      case PatternType.lightning:
+        final inMain = (u - v * 0.5).abs() <= 0.35 && v.abs() <= 0.85;
+        final inBolt = (u + v * 0.4).abs() <= 0.35 && v.abs() <= 0.85;
+        return inMain || inBolt;
+
+      case PatternType.rocket:
+        final inBody = u.abs() <= 0.45 && v.abs() <= 0.75;
+        final inNose = v > 0.4 && v <= (1.0 - u.abs() * 1.2);
+        final inFin = v < -0.3 && u.abs() <= (0.85 - (v + 0.7).abs());
+        return inBody || inNose || inFin;
+
+      case PatternType.bow:
+        return (u.abs() >= v.abs() * 0.5 &&
+                u.abs() <= 0.85 &&
+                v.abs() <= 0.7) ||
+            rDist <= 0.3;
+
+      case PatternType.swirl:
+        final swirlR = 0.35 + 0.4 * sin(theta * 2 + rDist * 4).abs();
+        return rDist <= swirlR && rDist <= 0.9;
     }
   }
 }

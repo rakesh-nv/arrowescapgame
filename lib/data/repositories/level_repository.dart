@@ -22,37 +22,47 @@ class LevelRepository {
   static LevelModel getLevel(int n) {
     assert(n >= 1, 'Level number must be >= 1');
 
-    if (_cache.containsKey(n)) return _cache[n]!;
+    LevelModel level;
+    if (_cache.containsKey(n)) {
+      level = _cache[n]!;
+    } else {
+      final seed = AppConstants.levelSeed(n);
+      level =
+          LevelGenerator.generate(levelNumber: n, seed: seed) ??
+          _fallbackLevel(n, Difficulty.easy);
+      _cache[n] = level;
+    }
 
-    final seed = AppConstants.levelSeed(n);
-
-    final level = LevelGenerator.generate(
-          levelNumber: n,
-          seed: seed,
-        ) ??
-        _fallbackLevel(n, Difficulty.easy);
-
-    _cache[n] = level;
+    _preloadNextLevels(n);
     return level;
+  }
+
+  static void _preloadNextLevels(int currentLevel) {
+    Future.microtask(() {
+      for (var i = 1; i <= 3; i++) {
+        final nextLvl = currentLevel + i;
+        if (!_cache.containsKey(nextLvl) &&
+            nextLvl <= AppConstants.totalLevels) {
+          final seed = AppConstants.levelSeed(nextLvl);
+          final level = LevelGenerator.generate(
+            levelNumber: nextLvl,
+            seed: seed,
+          );
+          if (level != null) {
+            _cache[nextLvl] = level;
+          }
+        }
+      }
+    });
   }
 
   /// Pre-generate all 100 levels (useful for validation/testing)
   static List<LevelModel> generateAll() {
-    return List.generate(
-      AppConstants.totalLevels,
-      (i) => getLevel(i + 1),
-    );
+    return List.generate(AppConstants.totalLevels, (i) => getLevel(i + 1));
   }
 
   /// Clear cache (useful for testing)
   static void clearCache() => _cache.clear();
-
-  static Difficulty _difficultyForLevel(int n) {
-    if (n <= AppConstants.easyLevelsEnd) return Difficulty.easy;
-    if (n <= AppConstants.normalLevelsEnd) return Difficulty.normal;
-    if (n <= AppConstants.hardLevelsEnd) return Difficulty.hard;
-    return Difficulty.expert;
-  }
 
   static LevelModel _fallbackLevel(int n, Difficulty difficulty) {
     // Ultra-simple 3-arrow level as last-resort fallback
@@ -72,7 +82,8 @@ class LevelRepository {
   static LevelModel getDailyChallenge(int dateSeed) {
     if (_cache.containsKey(-dateSeed)) return _cache[-dateSeed]!;
 
-    final level = LevelGenerator.generate(
+    final level =
+        LevelGenerator.generate(
           levelNumber: 0,
           seed: dateSeed,
           difficulty: Difficulty.normal,

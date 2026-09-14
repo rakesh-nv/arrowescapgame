@@ -91,7 +91,12 @@ class PuzzleConfig {
   }
 
   /// Calculates the exact screen coordinate for a dot at (row, col).
-  (double x, double y) dotPosition(int row, int col, {double boardLeft = 0.0, double boardTop = 0.0}) {
+  (double x, double y) dotPosition(
+    int row,
+    int col, {
+    double boardLeft = 0.0,
+    double boardTop = 0.0,
+  }) {
     final x = boardLeft + (col + 0.5) * cellSpacing;
     final y = boardTop + (row + 0.5) * cellSpacing;
     return (x, y);

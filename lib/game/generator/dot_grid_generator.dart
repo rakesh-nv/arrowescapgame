@@ -41,8 +41,9 @@ class DotGridGenerator {
     final gridSize = overrideGridSize ?? _gridSizeForDifficulty(difficulty);
     final maxMistakes = _maxMistakesForDifficulty(difficulty);
 
-    // Try up to 120 generation attempts to find a 100% filled, solvable board
-    for (var attempt = 0; attempt < 120; attempt++) {
+    // This runs during level navigation. A small bounded search prevents an
+    // older device from becoming unresponsive while pursuing perfect coverage.
+    for (var attempt = 0; attempt < 8; attempt++) {
       final rng = Random(seed ^ (attempt * 0x9E3779B9) ^ (levelNumber * 7919));
       final candidate = _generateCandidate(
         gridSize: gridSize,
@@ -67,8 +68,8 @@ class DotGridGenerator {
       );
     }
 
-    // Fallback: try with high coverage (≥96%) if 100% takes too many attempts
-    for (var attempt = 0; attempt < 40; attempt++) {
+    // Fallback: allow high coverage after the short full-coverage search.
+    for (var attempt = 0; attempt < 2; attempt++) {
       final rng = Random(seed ^ (attempt * 0x7FFFFFED) ^ 0xBEEF);
       final candidate = _generateCandidate(
         gridSize: gridSize,
