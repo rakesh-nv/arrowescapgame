@@ -50,14 +50,22 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget> {
     super.dispose();
   }
 
-  /// Centre and scale the puzzle to fit ~88% of the viewport on first build.
+  @override
+  void didUpdateWidget(ArrowBoardWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gridSize != widget.gridSize) {
+      _initialized = false;
+    }
+  }
+
+  /// Centre and fit the complete puzzle grid so the entire board is visible on screen.
   void _initTransform(BoxConstraints constraints, double gridPx) {
     if (_initialized) return;
     _initialized = true;
 
     final fit =
         min(constraints.maxWidth / gridPx, constraints.maxHeight / gridPx) *
-        0.88;
+        0.90;
 
     // translate( tx, ty ) * scale( fit ) maps scene origin → screen centre
     final tx = (constraints.maxWidth - gridPx * fit) / 2;
@@ -171,7 +179,7 @@ class _DotGridPainter extends CustomPainter {
       ..isAntiAlias = true
       ..style = PaintingStyle.fill;
 
-    final dotRadius = (cellSize * 0.06).clamp(1.8, 2.6);
+    final dotRadius = (cellSize * 0.06).clamp(3.0, 5.2);
 
     for (var r = 0; r < gridSize; r++) {
       for (var c = 0; c < gridSize; c++) {

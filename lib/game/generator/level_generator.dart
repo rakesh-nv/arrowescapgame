@@ -124,53 +124,53 @@ class LevelGenerator {
   static const Map<Difficulty, _DifficultyParams> _params = {
     Difficulty.easy: _DifficultyParams(
       gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.85,
+      targetDensity: 0.98,
       maxMistakes: 5,
       minBends: 0.4,
       minDepth: 1,
-      minArrows: 10,
-      maxArrowLen: 38,
-      avgTargetLen: 7.5,
+      minArrows: 30,
+      maxArrowLen: 45,
+      avgTargetLen: 5.0,
     ),
     Difficulty.normal: _DifficultyParams(
       gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.88,
+      targetDensity: 0.98,
       maxMistakes: 4,
       minBends: 0.5,
       minDepth: 2,
-      minArrows: 14,
-      maxArrowLen: 38,
-      avgTargetLen: 8.5,
+      minArrows: 38,
+      maxArrowLen: 45,
+      avgTargetLen: 5.5,
     ),
     Difficulty.hard: _DifficultyParams(
       gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.92,
+      targetDensity: 0.98,
       maxMistakes: 3,
       minBends: 0.6,
       minDepth: 3,
-      minArrows: 18,
-      maxArrowLen: 38,
-      avgTargetLen: 9.5,
+      minArrows: 46,
+      maxArrowLen: 45,
+      avgTargetLen: 6.0,
     ),
     Difficulty.expert: _DifficultyParams(
       gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.95,
+      targetDensity: 0.98,
       maxMistakes: 2,
       minBends: 0.7,
       minDepth: 4,
-      minArrows: 22,
-      maxArrowLen: 38,
-      avgTargetLen: 10.5,
+      minArrows: 54,
+      maxArrowLen: 45,
+      avgTargetLen: 6.5,
     ),
     Difficulty.extreme: _DifficultyParams(
       gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.96,
+      targetDensity: 0.98,
       maxMistakes: 1,
       minBends: 0.8,
       minDepth: 5,
-      minArrows: 26,
-      maxArrowLen: 38,
-      avgTargetLen: 11.5,
+      minArrows: 62,
+      maxArrowLen: 45,
+      avgTargetLen: 7.0,
     ),
   };
 
@@ -182,6 +182,7 @@ class LevelGenerator {
     if (levelNumber <= 20) return Difficulty.expert;
     return Difficulty.extreme;
   }
+
 
   /// Resolves the campaign pattern type matching the 100 level pattern reference sequence.
   static PatternType getPatternForLevel(int levelNumber) {
@@ -336,11 +337,11 @@ class LevelGenerator {
     // Relaxed Fallback Pass
     final relaxed = _DifficultyParams(
       gridSize: params.gridSize,
-      targetDensity: 0.95,
+      targetDensity: 0.90,
       maxMistakes: params.maxMistakes,
-      minBends: max(0.4, params.minBends - 0.5),
+      minBends: max(0.3, params.minBends - 0.3),
       minDepth: max(1, params.minDepth - 1),
-      minArrows: max(4, params.minArrows - 3),
+      minArrows: max(18, params.minArrows - 8),
       maxArrowLen: params.maxArrowLen,
       avgTargetLen: params.avgTargetLen,
     );
@@ -410,11 +411,11 @@ class LevelGenerator {
     // Relaxed Fallback Pass 2
     final relaxed2 = _DifficultyParams(
       gridSize: params.gridSize,
-      targetDensity: 0.95,
+      targetDensity: 0.88,
       maxMistakes: params.maxMistakes,
-      minBends: max(0.2, params.minBends - 0.3),
+      minBends: max(0.2, params.minBends - 0.4),
       minDepth: max(1, params.minDepth - 1),
-      minArrows: max(3, params.minArrows - 5),
+      minArrows: max(14, params.minArrows - 14),
       maxArrowLen: params.maxArrowLen,
       avgTargetLen: params.avgTargetLen,
     );
@@ -484,13 +485,13 @@ class LevelGenerator {
     // Stage 3 Emergency Safety Pass
     final emergency = _DifficultyParams(
       gridSize: params.gridSize,
-      targetDensity: 0.80,
+      targetDensity: 0.85,
       maxMistakes: params.maxMistakes,
       minBends: 0.1,
       minDepth: 1,
-      minArrows: 4,
+      minArrows: 7,
       maxArrowLen: params.maxArrowLen,
-      avgTargetLen: 4.0,
+      avgTargetLen: 8.0,
     );
 
     final emergencyPattern = getPatternForLevel(levelNumber);
@@ -555,7 +556,7 @@ class LevelGenerator {
       gridSize: params.gridSize,
       targetDensity: params.targetDensity,
       levelNumber: levelNumber,
-      minArrowLen: 4,
+      minArrowLen: 3,
       maxArrowLen: params.maxArrowLen,
       minArrows: params.minArrows,
       rng: rng,
@@ -576,8 +577,8 @@ class LevelGenerator {
     int levelNumber, {
     bool isRelaxed = false,
   }) {
-    final adaptiveMin = min(params.minArrows, (shapeMask.length / 5.0).floor());
-    if (arrows.length < max(4, adaptiveMin)) return false;
+    final adaptiveMin = min(params.minArrows, (shapeMask.length / 5.5).floor());
+    if (arrows.length < max(12, adaptiveMin)) return false;
 
     final minBoardOcc = getMinOccupancyForLevel(levelNumber);
     final boardOcc = boardOccupancy(arrows, params.gridSize);
@@ -586,7 +587,7 @@ class LevelGenerator {
     final occFloor = isRelaxed ? minBoardOcc * 0.5 : minBoardOcc;
     if (shapeOcc < occFloor && boardOcc < (occFloor * 0.75)) return false;
 
-    if (arrows.any((a) => !a.hasValidPath || a.length < 2)) return false;
+    if (arrows.any((a) => !a.hasValidPath || a.length < 3)) return false;
 
     final dirCounts = <ArrowDirection, int>{};
     for (final a in arrows) {

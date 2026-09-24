@@ -3,7 +3,7 @@ class AppConstants {
   AppConstants._();
 
   // Game
-  static const int fixedGridSize = 16;
+  static const int fixedGridSize = 20;
   static const int startingCoins = 100;
   static const int startingHints = 3;
   static const int startingLives = 3;
@@ -53,10 +53,10 @@ class AppConstants {
 
   // Board
   static const double boardPadding = 12.0;
-  static const double arrowStrokeWidth = 3.0;
-  static const double arrowHeadSize = 6.0;
-  static const double arrowCornerRadius = 2.0;
-  static const double cellPadding = 4.0;
+  static const double arrowStrokeWidth = 6.0;
+  static const double arrowHeadSize = 12.0;
+  static const double arrowCornerRadius = 4.0;
+  static const double cellPadding = 8.0;
 
   // Themes
   static const int forestThemeCost = 100;

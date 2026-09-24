@@ -9,11 +9,12 @@ import '../../data/repositories/progress_repository.dart';
 import '../../data/repositories/theme_repository.dart';
 import '../../game/engine/game_engine.dart';
 import '../../game/models/tap_result.dart';
-import '../../services/ad_service.dart';
+import '../ads/ads_module.dart';
 import '../../services/analytics_service.dart';
 import '../../services/audio_service.dart';
 import '../../services/economy_service.dart';
 import '../../services/haptic_service.dart';
+import '../../services/storage_service.dart';
 
 class GameplayController extends GetxController {
   final GameEngine _engine = GameEngine();
@@ -23,7 +24,7 @@ class GameplayController extends GetxController {
   final IAudioService _audio = Get.find<IAudioService>();
   final IAnalyticsService _analytics = Get.find<IAnalyticsService>();
   final IAdService _adService = Get.find<IAdService>();
-
+  final StorageService _storage = Get.find<StorageService>();
 
   // ── Observable state ──────────────────────────────────────────────────────
   final RxList<ArrowModel> arrows = <ArrowModel>[].obs;
@@ -31,11 +32,14 @@ class GameplayController extends GetxController {
   final RxInt moves = 0.obs;
   final RxInt mistakes = 0.obs;
   final RxBool isComplete = false.obs;
+  final RxBool isGameOver = false.obs;
+
   /// Brief reward beat between the final escape and the completion dialog.
   final RxBool isCompleting = false.obs;
   final RxBool isTutorialLevel = false.obs;
   final RxString hintedArrowId = ''.obs;
   final RxString animatingArrowId = ''.obs;
+
   /// Short glow given to moves unlocked by the most recent escape.
   final RxSet<String> newlyAvailableArrowIds = <String>{}.obs;
 
@@ -56,21 +60,53 @@ class GameplayController extends GetxController {
   void onInit() {
     super.onInit();
     _syncTheme();
+    _ensureStartingHints();
+  }
+
+  void _ensureStartingHints() {
+    if (_economy.hints.value < AppConstants.startingHints) {
+      _economy.addHints(AppConstants.startingHints - _economy.hints.value);
+    }
   }
 
   void _syncTheme() {
-    currentTheme.value =
-        ThemeRepository.getById(_progress.progress.currentThemeId);
+    currentTheme.value = ThemeRepository.getById(
+      _progress.progress.currentThemeId,
+    );
   }
 
   void loadLevel(int lvl) {
     isComplete.value = false;
     isCompleting.value = false;
+    isGameOver.value = false;
     _syncTheme();
+    _ensureStartingHints();
     final level = LevelRepository.getLevel(lvl);
     _level.value = level;
     levelNumber.value = lvl;
-    _engine.loadLevel(level);
+
+    final saved = _storage.getSavedGame(lvl);
+    if (saved != null) {
+      final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
+      final moves = saved['moves'] as int? ?? 0;
+      final mistakes = saved['mistakes'] as int? ?? 0;
+      final lives = saved['lives'] as int? ?? 3;
+
+      if (removed.isNotEmpty && removed.length < level.arrows.length) {
+        _engine.restoreLevel(
+          level: level,
+          removedArrowIds: removed,
+          moves: moves,
+          mistakes: mistakes,
+          lives: lives,
+        );
+      } else {
+        _engine.loadLevel(level);
+      }
+    } else {
+      _engine.loadLevel(level);
+    }
+
     _syncState();
     newlyAvailableArrowIds.clear();
     isTutorialLevel.value = lvl == 1;
@@ -83,14 +119,59 @@ class GameplayController extends GetxController {
 
   void loadLevelModel(LevelModel level) {
     _syncTheme();
+    _ensureStartingHints();
     _level.value = level;
     levelNumber.value = level.levelNumber;
-    _engine.loadLevel(level);
+
+    final saved = _storage.getSavedGame(level.levelNumber);
+    if (saved != null) {
+      final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
+      final moves = saved['moves'] as int? ?? 0;
+      final mistakes = saved['mistakes'] as int? ?? 0;
+      final lives = saved['lives'] as int? ?? 3;
+
+      if (removed.isNotEmpty && removed.length < level.arrows.length) {
+        _engine.restoreLevel(
+          level: level,
+          removedArrowIds: removed,
+          moves: moves,
+          mistakes: mistakes,
+          lives: lives,
+        );
+      } else {
+        _engine.loadLevel(level);
+      }
+    } else {
+      _engine.loadLevel(level);
+    }
+
     _syncState();
     isComplete.value = false;
     isCompleting.value = false;
+    isGameOver.value = false;
     newlyAvailableArrowIds.clear();
     isTutorialLevel.value = false;
+  }
+
+  /// Saves the current in-progress puzzle state to storage.
+  void saveCurrentGame() {
+    if (isComplete.value || _level.value == null) return;
+    final removed = _engine.removedArrowIds;
+    // Don't overwrite if untouched initial state
+    if (removed.isEmpty && moves.value == 0 && mistakes.value == 0) return;
+
+    _storage.saveGame(
+      levelNumber: currentLevelNumber,
+      removedArrowIds: removed,
+      moves: moves.value,
+      mistakes: mistakes.value,
+      lives: lives.value,
+    );
+  }
+
+  /// Clears the saved state for the current level (on win or reset).
+  void clearSavedGame() {
+    _storage.clearSavedGame(currentLevelNumber);
   }
 
   // ── Player Actions ────────────────────────────────────────────────────────
@@ -98,7 +179,11 @@ class GameplayController extends GetxController {
   void onArrowTap(String arrowId) {
     // A snake animation owns the board until its tail has exited. Starting a
     // second path mid-animation would make occupancy and visual motion diverge.
-    if (isComplete.value || animatingArrowId.value.isNotEmpty) return;
+    if (isComplete.value ||
+        isGameOver.value ||
+        animatingArrowId.value.isNotEmpty ||
+        lives.value <= 0)
+      return;
 
     // Immediately dismiss any active hint when the user taps an arrow
     hintedArrowId.value = '';
@@ -112,14 +197,17 @@ class GameplayController extends GetxController {
       case TapResult.valid:
         _audio.playArrowEscape();
         animatingArrowId.value = arrowId;
-        _analytics.logEvent(AnalyticsEvent.arrowTapped,
-            params: {'arrowId': arrowId});
+        _analytics.logEvent(
+          AnalyticsEvent.arrowTapped,
+          params: {'arrowId': arrowId},
+        );
 
         // After animation duration, mark removed and check win
         Future.delayed(
           Duration(
-            milliseconds:
-                AppConstants.arrowEscapeDurationForLength(arrowLength),
+            milliseconds: AppConstants.arrowEscapeDurationForLength(
+              arrowLength,
+            ),
           ),
           () {
             _engine.markArrowRemoved(arrowId);
@@ -127,6 +215,9 @@ class GameplayController extends GetxController {
             hintedArrowId.value = '';
             newlyAvailableArrowIds.clear();
             _syncState();
+            if (!_engine.isComplete()) {
+              saveCurrentGame();
+            }
             _checkWin();
           },
         );
@@ -135,7 +226,21 @@ class GameplayController extends GetxController {
       case TapResult.blocked:
         _audio.playBlocked();
         _analytics.logEvent(AnalyticsEvent.arrowBlocked);
+        _haptic.lightTap();
+        saveCurrentGame();
 
+        if (_engine.lives <= 0) {
+          Future.delayed(
+            const Duration(
+              milliseconds: AppConstants.blockedAnimDurationMs + 100,
+            ),
+            () {
+              if (_engine.lives <= 0 && !isComplete.value) {
+                isGameOver.value = true;
+              }
+            },
+          );
+        }
 
         // Reset the blocked state after subtle bump animation
         Future.delayed(
@@ -159,6 +264,7 @@ class GameplayController extends GetxController {
     animatingArrowId.value = '';
     newlyAvailableArrowIds.clear();
     _syncState();
+    saveCurrentGame();
     _analytics.logEvent(AnalyticsEvent.undoUsed);
   }
 
@@ -179,13 +285,39 @@ class GameplayController extends GetxController {
   }
 
   void onReset() {
+    clearSavedGame();
     _engine.reset();
     hintedArrowId.value = '';
     animatingArrowId.value = '';
     newlyAvailableArrowIds.clear();
     isComplete.value = false;
     isCompleting.value = false;
+    isGameOver.value = false;
     _syncState();
+  }
+
+  /// Shows a rewarded ad. If the user watches it fully, grants 3 lives and
+  /// clears the game-over state so play can resume.
+  Future<bool> watchAdContinue() async {
+    final granted = await _adService.showRewardedLife();
+    if (granted) {
+      _engine.restoreLives(3);
+      isGameOver.value = false;
+      _syncState();
+      _haptic.lightTap();
+      saveCurrentGame();
+    }
+    return granted;
+  }
+
+  /// Shows a rewarded ad for a hint. If watched, awards 1 hint to the player.
+  Future<bool> watchAdForHint() async {
+    final granted = await _adService.showRewardedHint();
+    if (granted) {
+      _economy.addHints(1);
+      _haptic.lightTap();
+    }
+    return granted;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -197,9 +329,9 @@ class GameplayController extends GetxController {
     mistakes.value = _engine.mistakes;
   }
 
-
   void _checkWin() {
     if (_engine.isComplete()) {
+      clearSavedGame();
       isCompleting.value = true;
       _haptic.heavyTap();
 

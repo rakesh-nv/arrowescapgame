@@ -32,7 +32,7 @@ class ShapePathGenerator {
 
     final totalUsable = shapeMask.length;
     final targetOccupied = (totalUsable * targetDensity)
-        .clamp(12, totalUsable)
+        .clamp(20, totalUsable)
         .round();
 
     // 1. Build Distance Contour Field inside shapeMask
@@ -130,14 +130,33 @@ class ShapePathGenerator {
       }
     }
 
-    // Controlled Tail Absorption Pass respecting length caps.
-    _absorbFreeCellsWithCaps(
+    // Pass 1: Controlled Tail Absorption Pass respecting exit ray safety.
+    _absorbFreeCells(
       placedArrows: placedArrows,
-      arrowCaps: arrowCaps,
       shapeMask: shapeMask,
       occupied: occupied,
-      targetOccupied: targetOccupied,
+      blockedExitRays: blockedExitRays,
+      maxArrowLen: maxArrowLen,
+      rng: rng,
+    );
+
+    // Pass 2: Fill remaining pockets with valid 3+ cell escaping arrows.
+    _fillRemainingGaps(
+      placedArrows: placedArrows,
+      shapeMask: shapeMask,
+      occupied: occupied,
+      blockedExitRays: blockedExitRays,
       gridSize: gridSize,
+      rng: rng,
+    );
+
+    // Pass 3: Final absorption of any remaining 1-2 cell pockets into tails.
+    _absorbFreeCells(
+      placedArrows: placedArrows,
+      shapeMask: shapeMask,
+      occupied: occupied,
+      blockedExitRays: blockedExitRays,
+      maxArrowLen: maxArrowLen,
       rng: rng,
     );
 
@@ -198,18 +217,20 @@ class ShapePathGenerator {
   }
 
   static List<LengthTier> _tiersFor(int count, int levelNumber) {
-    if (count <= 4) {
+    if (count <= 6) {
       return [
         LengthTier.extraLong,
         LengthTier.veryLong,
         LengthTier.long,
+        LengthTier.long,
+        LengthTier.medium,
         LengthTier.medium,
       ].take(count).toList();
     }
-    final extraCount = max(1, (count * 0.15).round());
-    final veryLongCount = max(1, (count * 0.25).round());
-    final longCount = max(2, (count * 0.35).round());
-    final mediumCount = max(2, (count * 0.25).round());
+    final extraCount = max(1, (count * 0.16).round());
+    final veryLongCount = max(2, (count * 0.28).round());
+    final longCount = max(2, (count * 0.32).round());
+    final mediumCount = max(2, (count * 0.18).round());
     final shortCount = max(
       0,
       count - extraCount - veryLongCount - longCount - mediumCount,
@@ -238,18 +259,20 @@ class ShapePathGenerator {
     int levelNumber,
     int maxArrowLen,
   ) {
+    // Sized to double the total number of arrows across all boards.
     final base = switch (tier) {
-      LengthTier.short => (5, 7),
-      LengthTier.medium => (8, 12),
-      LengthTier.long => (13, 18),
-      LengthTier.veryLong => (19, 26),
-      LengthTier.extraLong => (27, min(38, maxArrowLen)),
+      LengthTier.short     => (4, 7),
+      LengthTier.medium    => (7, 10),
+      LengthTier.long      => (10, 13),
+      LengthTier.veryLong  => (13, 16),
+      LengthTier.extraLong => (16, min(22, maxArrowLen)),
     };
     return base;
   }
 
   static double _averageFor(int levelNumber) {
-    return 7.5 + (levelNumber / 100.0) * 2.5;
+    // Average ~9.5 cells per arrow → doubles the total arrows produced.
+    return 9.0 + (levelNumber / 100.0) * 2.5;
   }
 
   /// Assigns each shape cell a contour distance from the outer boundary.
@@ -341,7 +364,7 @@ class ShapePathGenerator {
     final pathSet = path.toSet();
 
     var straightRun = 1;
-    const maxStraightRun = 5;
+    const maxStraightRun = 6;
 
     while (path.length < targetLength) {
       final tail = path.last;
@@ -433,30 +456,29 @@ class ShapePathGenerator {
     }
   }
 
-  /// Controlled tail absorption pass extending paths into adjacent free cells without violating tier caps.
-  static void _absorbFreeCellsWithCaps({
+  /// Tail absorption pass extending paths into adjacent free cells without blocking earlier-escaping arrows.
+  static void _absorbFreeCells({
     required List<ArrowModel> placedArrows,
-    required Map<int, _TierCap> arrowCaps,
     required Set<Cell> shapeMask,
     required Set<Cell> occupied,
-    required int targetOccupied,
-    required int gridSize,
+    required Map<Cell, Set<int>> blockedExitRays,
+    required int maxArrowLen,
     required Random rng,
   }) {
     if (placedArrows.isEmpty) return;
 
-    // Pass 1: Extend existing arrow tails up to their designated tier cap
     var modified = true;
-    while (occupied.length < targetOccupied && modified) {
+    var iterations = 0;
+    while (modified && occupied.length < shapeMask.length && iterations < 30) {
       modified = false;
+      iterations++;
       final indices = List<int>.generate(placedArrows.length, (i) => i)
         ..shuffle(rng);
 
       for (final i in indices) {
-        if (occupied.length >= targetOccupied) break;
+        if (occupied.length >= shapeMask.length) break;
         final arrow = placedArrows[i];
-        final maxCap = arrowCaps[i]?.maxCap ?? 8;
-        if (arrow.length >= maxCap) continue;
+        if (arrow.length >= maxArrowLen) continue;
 
         final tail = arrow.points.first;
         final deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)]..shuffle(rng);
@@ -464,6 +486,13 @@ class ShapePathGenerator {
         for (final delta in deltas) {
           final next = (tail.$1 + delta.$1, tail.$2 + delta.$2);
           if (shapeMask.contains(next) && !occupied.contains(next)) {
+            // Safety check: arrow j with j > i escapes BEFORE arrow i.
+            // Do not block earlier-escaping arrows.
+            final blockers = blockedExitRays[next];
+            if (blockers != null && blockers.any((j) => j > i)) {
+              continue;
+            }
+
             placedArrows[i] = ArrowModel(
               id: arrow.id,
               points: [next, ...arrow.points],
@@ -475,8 +504,63 @@ class ShapePathGenerator {
         }
       }
     }
+  }
 
-    // Deliberately leave isolated pockets empty. Filling them with 2–3-cell
-    // arrows would undermine the long-path game design.
+  /// Fills any remaining isolated pockets of 3+ cells with valid escaping arrows.
+  static void _fillRemainingGaps({
+    required List<ArrowModel> placedArrows,
+    required Set<Cell> shapeMask,
+    required Set<Cell> occupied,
+    required Map<Cell, Set<int>> blockedExitRays,
+    required int gridSize,
+    required Random rng,
+  }) {
+    final freeCells = shapeMask.where((c) => !occupied.contains(c)).toList()
+      ..shuffle(rng);
+
+    for (final head in freeCells) {
+      if (occupied.contains(head)) continue;
+
+      for (final dir in ArrowDirection.values) {
+        if (!_isExitRayFree(head, dir, gridSize, occupied)) continue;
+
+        final path = <Cell>[head];
+        var curr = head;
+        // Prefer straight back from head, then turns
+        for (var step = 0; step < 7; step++) {
+          final deltas = [
+            (-dir.dRow, -dir.dCol),
+            (dir.dCol, dir.dRow),
+            (-dir.dCol, -dir.dRow),
+          ]..shuffle(rng);
+
+          Cell? next;
+          for (final d in deltas) {
+            final cand = (curr.$1 + d.$1, curr.$2 + d.$2);
+            if (shapeMask.contains(cand) &&
+                !occupied.contains(cand) &&
+                !path.contains(cand)) {
+              next = cand;
+              break;
+            }
+          }
+          if (next == null) break;
+          path.add(next);
+          curr = next;
+        }
+
+        if (path.length >= 3) {
+          final idx = placedArrows.length;
+          final newArrow = ArrowModel(
+            id: 'gap_$idx',
+            points: path.reversed.toList(),
+          );
+          placedArrows.add(newArrow);
+          occupied.addAll(path);
+          _recordExitRay(newArrow, gridSize, idx, blockedExitRays);
+          break;
+        }
+      }
+    }
   }
 }

@@ -12,8 +12,11 @@ import '../../widgets/coin_badge.dart';
 import '../../widgets/difficulty_badge.dart';
 import '../../widgets/heart_display.dart';
 import 'gameplay_controller.dart';
+import 'widgets/game_over_dialog.dart';
+import 'widgets/hint_ad_dialog.dart';
 import 'widgets/level_complete_dialog.dart';
 import 'widgets/tutorial_overlay.dart';
+import '../ads/ads_module.dart';
 
 class GameplayScreen extends StatefulWidget {
   const GameplayScreen({super.key});
@@ -23,16 +26,18 @@ class GameplayScreen extends StatefulWidget {
 }
 
 class _GameplayScreenState extends State<GameplayScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late GameplayController _controller;
   late ConfettiController _confetti;
   bool _dialogShown = false;
+  bool _gameOverShown = false;
   bool _tutorialShown = false;
   late AnimationController _rewardController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _confetti = ConfettiController(duration: const Duration(seconds: 3));
     _rewardController = AnimationController(
       vsync: this,
@@ -63,16 +68,60 @@ class _GameplayScreenState extends State<GameplayScreen>
     ever(_controller.isCompleting, (bool active) {
       if (active) _rewardController.forward(from: 0);
     });
+    // Listen for game over (all 3 lives lost)
+    ever(_controller.isGameOver, (bool over) {
+      if (over && !_gameOverShown) {
+        _gameOverShown = true;
+        Future.delayed(const Duration(milliseconds: 250), _showGameOverDialog);
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _controller.saveCurrentGame();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.saveCurrentGame();
     _confetti.dispose();
     _rewardController.dispose();
     if (Get.isRegistered<GameplayController>()) {
       Get.delete<GameplayController>();
     }
     super.dispose();
+  }
+
+  void _showGameOverDialog() {
+    showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => GameOverDialog(
+        levelNumber: _controller.currentLevelNumber,
+        onRetry: () {
+          Navigator.of(dialogContext).pop();
+          _gameOverShown = false;
+          _controller.onReset();
+        },
+        onHome: () {
+          Navigator.of(dialogContext).pop();
+          _gameOverShown = false;
+          Get.offNamed('/home');
+        },
+        onWatchAd: () => _controller.watchAdContinue(),
+      ),
+    ).then((adWatched) {
+      // If the dialog was dismissed via ad (pop(true)), reset the guard so
+      // a subsequent game-over can show the dialog again.
+      if (adWatched == true) _gameOverShown = false;
+    });
   }
 
   void _showCompleteDialog() {
@@ -99,6 +148,20 @@ class _GameplayScreenState extends State<GameplayScreen>
         },
       ),
     );
+  }
+
+  void _showHintAdDialog() {
+    showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => HintAdDialog(
+        onWatchAd: () => _controller.watchAdForHint(),
+      ),
+    ).then((useNow) {
+      if (useNow == true) {
+        _controller.onHint();
+      }
+    });
   }
 
   @override
@@ -135,7 +198,9 @@ class _GameplayScreenState extends State<GameplayScreen>
                 _buildBoard(theme),
                 const SizedBox(height: 12),
                 _buildBottomBar(theme),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                const BannerAdWidget(),
+                const SizedBox(height: 4),
               ],
             ),
           ),
@@ -271,13 +336,14 @@ class _GameplayScreenState extends State<GameplayScreen>
   Widget _buildBoard(ThemeModel theme) {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Obx(() {
           final visibleArrows = _controller.arrows
               .where((a) => a.state != ArrowState.removed)
               .toList();
 
           return ArrowBoardWidget(
+            key: ValueKey('level_${_controller.currentLevelNumber}'),
             arrows: visibleArrows,
             gridSize: _controller.gridSize,
             theme: theme,
@@ -303,20 +369,20 @@ class _GameplayScreenState extends State<GameplayScreen>
           // Hint
           Obx(() {
             final economy = Get.find<EconomyService>();
+            final hasHints = economy.hints.value > 0;
             return _BottomActionButton(
-              icon: Icons.lightbulb_rounded,
-              label: 'Hint',
-              badge: '${economy.hints.value}',
+              icon: hasHints
+                  ? Icons.lightbulb_rounded
+                  : Icons.smart_display_rounded,
+              label: hasHints ? 'Hint' : 'Free Hint',
+              badge: hasHints ? '${economy.hints.value}' : 'Ad',
               color: Colors.amber,
               theme: theme,
               onTap: () {
-                if (!_controller.onHint()) {
-                  Get.snackbar(
-                    'No Hints',
-                    'Complete levels to earn more hints!',
-                    duration: const Duration(seconds: 2),
-                    snackPosition: SnackPosition.BOTTOM,
-                  );
+                if (hasHints) {
+                  _controller.onHint();
+                } else {
+                  _showHintAdDialog();
                 }
               },
             );
@@ -436,13 +502,15 @@ class _BottomActionButton extends StatelessWidget {
                 ),
                 if (badge != null)
                   Positioned(
-                    right: 0,
-                    top: 0,
+                    right: -2,
+                    top: -2,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: color,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         badge!,

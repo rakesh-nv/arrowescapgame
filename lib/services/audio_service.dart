@@ -72,9 +72,7 @@ class AudioPlayersService extends GetxService implements IAudioService {
           ),
           iOS: AudioContextIOS(
             category: AVAudioSessionCategory.ambient,
-            options: const {
-              AVAudioSessionOptions.mixWithOthers,
-            },
+            options: const {},
           ),
         ),
       );

@@ -24,6 +24,11 @@ class EconomyService extends GetxService {
   void _syncFromStorage() {
     final p = _storage.progress;
     coins.value = p.coins.clamp(0, 999999);
+    // Ensure player always has at least startingHints (3) free hints initially
+    if (p.hints < AppConstants.startingHints) {
+      p.hints = AppConstants.startingHints;
+      _storage.saveProgress(p);
+    }
     hints.value = p.hints.clamp(0, 999);
   }
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
-import '../../../services/ad_service.dart';
+import '../../ads/ads_module.dart';
 import '../../../services/economy_service.dart';
 import '../../../widgets/primary_button.dart';
 import '../../../widgets/secondary_button.dart';
@@ -185,14 +185,17 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
                     const Icon(Icons.monetization_on_rounded,
                         color: AppColors.coinGold, size: 20),
                     const SizedBox(width: 6),
-                    Text(
-                      _hasDoubledCoins
-                          ? '+${(25 + (widget.stars == 3 ? 10 : 0)) * 2} coins earned (2x Bonus!)'
-                          : '+${25 + (widget.stars == 3 ? 10 : 0)} coins earned',
-                      style: const TextStyle(
-                        color: AppColors.coinGoldDark,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                    Flexible(
+                      child: Text(
+                        _hasDoubledCoins
+                            ? '+${(25 + (widget.stars == 3 ? 10 : 0)) * 2} coins earned (2x Bonus!)'
+                            : '+${25 + (widget.stars == 3 ? 10 : 0)} coins earned',
+                        style: const TextStyle(
+                          color: AppColors.coinGoldDark,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],

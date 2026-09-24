@@ -59,6 +59,12 @@ class GameEngine {
 
   bool get canUndo => _undoStack.isNotEmpty;
 
+  /// Returns the IDs of all arrows that are currently removed
+  List<String> get removedArrowIds => _arrows.values
+      .where((a) => a.state == ArrowState.removed)
+      .map((a) => a.id)
+      .toList();
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /// Load a level and reset all state
@@ -74,6 +80,26 @@ class GameEngine {
     _arrows = {
       for (final a in level.copyWithFreshArrows().arrows) a.id: a,
     };
+  }
+
+  /// Restore a level with previously removed arrows, moves, mistakes, and lives
+  void restoreLevel({
+    required LevelModel level,
+    required List<String> removedArrowIds,
+    required int moves,
+    required int mistakes,
+    required int lives,
+  }) {
+    loadLevel(level);
+    for (final arrowId in removedArrowIds) {
+      final a = _arrows[arrowId];
+      if (a != null) {
+        _arrows[arrowId] = a.copyWith(state: ArrowState.removed);
+      }
+    }
+    _moves = moves;
+    _mistakes = mistakes;
+    _lives = lives.clamp(1, 3);
   }
 
   /// Reset the current level to its initial state
@@ -132,10 +158,8 @@ class GameEngine {
       // Mark as blocked temporarily (UI will shake then reset)
       _arrows[arrowId] = arrow.copyWith(state: ArrowState.blocked);
       _mistakes++;
-      if (_mistakes > 0 && _mistakes % 3 == 0) {
-        // Lose a life every 3 mistakes
-        _lives = (_lives - 1).clamp(0, 3);
-      }
+      // Lose 1 life on every mistake
+      _lives = (_lives - 1).clamp(0, 3);
       return TapResult.blocked;
     }
   }
@@ -190,6 +214,11 @@ class GameEngine {
       moves: _moves,
       mistakes: _mistakes,
     ));
+  }
+
+  /// Restore lives to [count] (called after a rewarded ad is watched).
+  void restoreLives([int count = 3]) {
+    _lives = count.clamp(1, 3);
   }
 
   // ── Hint ──────────────────────────────────────────────────────────────────

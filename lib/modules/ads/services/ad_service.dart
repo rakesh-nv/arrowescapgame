@@ -9,7 +9,7 @@ abstract class IAdService {
   bool get adsEnabled;
 }
 
-/// No-op implementation for development without AdMob IDs.
+/// No-op implementation for development without AdMob IDs or when ads are disabled.
 class NoOpAdService extends GetxService implements IAdService {
   @override
   bool get adsEnabled => false;

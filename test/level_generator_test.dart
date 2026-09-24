@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:arrowescapegame/core/constants/app_constants.dart';
 import 'package:arrowescapegame/data/models/arrow_direction.dart';
 import 'package:arrowescapegame/data/models/difficulty.dart';
 import 'package:arrowescapegame/game/generator/dependency_analyzer.dart';
@@ -19,7 +20,7 @@ void main() {
         difficulty: Difficulty.easy,
       );
       expect(level, isNotNull);
-      expect(level!.gridSize, equals(16));
+      expect(level!.gridSize, equals(AppConstants.fixedGridSize));
       expect(level.arrows.length, greaterThanOrEqualTo(4));
       expect(LevelSolver.solve(level.arrows, level.gridSize).solvable, isTrue);
     });
@@ -31,7 +32,7 @@ void main() {
         difficulty: Difficulty.normal,
       );
       expect(level, isNotNull);
-      expect(level!.gridSize, equals(16));
+      expect(level!.gridSize, equals(AppConstants.fixedGridSize));
       expect(level.arrows.length, greaterThanOrEqualTo(4));
       expect(LevelSolver.solve(level.arrows, level.gridSize).solvable, isTrue);
     });

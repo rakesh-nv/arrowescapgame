@@ -153,14 +153,35 @@ class PatternGenerator {
     final cy = (gridSize - 1) / 2.0;
     final s = max(1.0, (gridSize - 1) / 2.0);
 
-    // Scale shapes to utilize the entire 14x14 playable grid
-    final scale = 0.92 + rng.nextDouble() * 0.08; // 0.92 - 1.00
-    final rotationAngle = (rng.nextInt(4)) * (pi / 2.0); // 0, 90, 180, 270 deg
-    final flipX = rng.nextBool();
-    final flipY = rng.nextBool();
+    // Scale shapes to utilize the playable grid
+    final scale = 0.95 + rng.nextDouble() * 0.05;
+
+    // Iconic/asymmetric shapes must NOT be rotated or flipped — rotation
+    // destroys recognisability (a flipped heart looks broken, a rotated cat
+    // loses its ears, etc.). Only purely symmetric geometric shapes get random
+    // rotation.
+    const _rotationLocked = {
+      PatternType.heart,
+      PatternType.cat,
+      PatternType.crown,
+      PatternType.rocket,
+      PatternType.butterfly,
+      PatternType.lightning,
+      PatternType.infinity,
+      PatternType.bow,
+      PatternType.snake,
+      PatternType.flower,
+      PatternType.swirl,
+    };
+
+    final bool lockRotation = _rotationLocked.contains(type);
+    final rotationAngle = lockRotation ? 0.0 : (rng.nextInt(4)) * (pi / 2.0);
+    final flipX = lockRotation ? false : rng.nextBool();
+    final flipY = lockRotation ? false : rng.nextBool();
+
     final starPoints = rng.nextBool() ? 5 : 6;
-    final innerRatio = 0.15 + rng.nextDouble() * 0.10; // thin ring cutouts
-    final outerRadius = 0.92 + rng.nextDouble() * 0.06;
+    final innerRatio = 0.12 + rng.nextDouble() * 0.08;
+    final outerRadius = 0.94 + rng.nextDouble() * 0.04;
 
     final cosA = cos(rotationAngle);
     final sinA = sin(rotationAngle);
@@ -196,13 +217,14 @@ class PatternGenerator {
       }
     }
 
-    // Ensure minimum size and connected component
-    if (mask.length < max(14, gridSize * 2)) {
+    // Ensure minimum size and connected component (at least ~48% of grid cells)
+    final minMaskCells = (gridSize * gridSize * 0.48).round();
+    if (mask.length < minMaskCells) {
       for (var r = 0; r < gridSize; r++) {
         for (var c = 0; c < gridSize; c++) {
           final u = (c - cx) / s;
           final v = (cy - r) / s;
-          if (max(u.abs(), v.abs()) <= 0.85) {
+          if (max(u.abs(), v.abs()) <= 0.88) {
             mask.add((r, c));
           }
         }
@@ -230,127 +252,127 @@ class PatternGenerator {
         final normalized = angle < 0 ? angle + 2 * pi / starPoints : angle;
         final psi = (normalized - pi / starPoints).abs() / (pi / starPoints);
         final maxR =
-            (outerRadius * 0.46) +
-            (outerRadius - outerRadius * 0.46) * (1.0 - psi);
+            (outerRadius * 0.55) +
+            (outerRadius - outerRadius * 0.35) * (1.0 - psi);
         return rDist <= maxR;
 
       case PatternType.square:
         return u.abs() <= outerRadius && v.abs() <= outerRadius;
 
       case PatternType.spiral:
-        final spiralR = (theta / (2 * pi) + 1.5) * 0.28;
-        final distFromSpiral = (rDist - (spiralR % 0.45)).abs();
+        final spiralR = (theta / (2 * pi) + 1.5) * 0.32;
+        final distFromSpiral = (rDist - (spiralR % 0.50)).abs();
         return rDist <= outerRadius &&
-            (distFromSpiral <= 0.22 || rDist <= 0.45);
+            (distFromSpiral <= 0.28 || rDist <= 0.52);
 
       case PatternType.ring:
         return rDist <= outerRadius && rDist >= (outerRadius * innerRatio);
 
       case PatternType.diamond:
-        return (u.abs() + v.abs()) <= (outerRadius * 1.15);
+        return (u.abs() + v.abs()) <= (outerRadius * 1.25);
 
       case PatternType.starSquare:
         final inSquare = u.abs() <= outerRadius && v.abs() <= outerRadius;
         final angle = (theta - pi / 2) % (2 * pi / starPoints);
         final normalized = angle < 0 ? angle + 2 * pi / starPoints : angle;
         final psi = (normalized - pi / starPoints).abs() / (pi / starPoints);
-        final maxR = 0.40 + 0.45 * (1.0 - psi);
+        final maxR = 0.50 + 0.45 * (1.0 - psi);
         final inStar = rDist <= maxR;
-        return inSquare && (inStar || rDist >= 0.62);
+        return inSquare && (inStar || rDist >= 0.50);
 
       case PatternType.starRing:
-        final inRing = rDist <= outerRadius && rDist >= 0.35;
+        final inRing = rDist <= outerRadius && rDist >= 0.28;
         final angle = (theta - pi / 2) % (2 * pi / 5);
         final normalized = angle < 0 ? angle + 2 * pi / 5 : angle;
         final psi = (normalized - pi / 5).abs() / (pi / 5);
-        final inStar = rDist <= (0.45 + 0.35 * (1.0 - psi));
+        final inStar = rDist <= (0.50 + 0.42 * (1.0 - psi));
         return inRing || inStar;
 
       case PatternType.squareRing:
         final inSquare = u.abs() <= outerRadius && v.abs() <= outerRadius;
-        final inRingCore = rDist <= 0.82 && rDist >= 0.32;
+        final inRingCore = rDist <= 0.90 && rDist >= 0.22;
         return inSquare && inRingCore;
 
       case PatternType.diamondSpiral:
-        final inDiamond = (u.abs() + v.abs()) <= (outerRadius * 1.10);
+        final inDiamond = (u.abs() + v.abs()) <= (outerRadius * 1.25);
         return inDiamond;
 
       case PatternType.interlocked:
         final inOuter =
-            (u.abs() + v.abs()) <= 1.05 && u.abs() <= 0.85 && v.abs() <= 0.85;
+            (u.abs() + v.abs()) <= 1.20 && u.abs() <= 0.92 && v.abs() <= 0.92;
         return inOuter;
 
       case PatternType.randomGeometric:
-        final maxR = 0.72 + 0.16 * cos(3 * theta + 0.5) + 0.08 * sin(5 * theta);
+        final maxR = 0.82 + 0.14 * cos(3 * theta + 0.5) + 0.06 * sin(5 * theta);
         return rDist <= maxR;
 
       case PatternType.extremeCombination:
         final inSquare = u.abs() <= outerRadius && v.abs() <= outerRadius;
-        final inRing = rDist <= 0.85 && rDist >= 0.30;
+        final inRing = rDist <= 0.92 && rDist >= 0.22;
         return inSquare && inRing;
 
       case PatternType.heart:
-        final x = u * 1.1;
-        final y = v * 1.1 + 0.15;
-        final a = x * x + y * y - 0.7;
+        final x = u * 1.05;
+        final y = v * 1.05 + 0.12;
+        final a = x * x + y * y - 0.75;
         return (a * a * a - x * x * y * y * y) <= 0.0;
 
       case PatternType.butterfly:
-        final bR = 0.45 + 0.35 * cos(2 * theta) * sin(4 * theta).abs();
-        return rDist <= bR && u.abs() <= 0.9 && v.abs() <= 0.9;
+        final wing = 0.68 + 0.30 * cos(2 * theta).abs();
+        return rDist <= wing && u.abs() <= 0.95 && v.abs() <= 0.92;
 
       case PatternType.crown:
-        final inBody = u.abs() <= 0.85 && v >= -0.75 && v <= 0.3;
-        final inSpike = v > 0.3 && (v - 0.3) <= (0.55 - u.abs() * 0.4);
+        final inBody = u.abs() <= 0.90 && v >= -0.80 && v <= 0.35;
+        final inSpike = v > 0.35 && (v - 0.35) <= (0.60 - u.abs() * 0.4);
         return inBody || inSpike;
 
       case PatternType.cat:
-        final inHead = rDist <= 0.75;
+        final inHead = rDist <= 0.82;
         final inLeftEar =
-            u <= -0.2 && u >= -0.8 && v >= 0.3 && v <= (1.0 + (u + 0.5) * 1.2);
+            u <= -0.18 && u >= -0.85 && v >= 0.25 && v <= (1.05 + (u + 0.5) * 1.2);
         final inRightEar =
-            u >= 0.2 && u <= 0.8 && v >= 0.3 && v <= (1.0 - (u - 0.5) * 1.2);
+            u >= 0.18 && u <= 0.85 && v >= 0.25 && v <= (1.05 - (u - 0.5) * 1.2);
         return inHead || inLeftEar || inRightEar;
 
       case PatternType.snake:
-        final sY = sin(u * pi * 1.5) * 0.45;
-        return u.abs() <= 0.9 && (v - sY).abs() <= 0.40;
+        final sY = sin(u * pi * 1.5) * 0.40;
+        return u.abs() <= 0.94 && (v - sY).abs() <= 0.52;
 
       case PatternType.hexagon:
-        return u.abs() <= 0.85 && (u.abs() * 0.5 + v.abs() * 0.866) <= 0.85;
+        return u.abs() <= 0.92 && (u.abs() * 0.5 + v.abs() * 0.866) <= 0.92;
 
       case PatternType.flower:
-        final fR = 0.45 + 0.40 * cos(3 * theta).abs();
+        final fR = 0.68 + 0.28 * cos(4 * theta).abs();
         return rDist <= fR;
 
       case PatternType.cross:
-        return (u.abs() <= 0.35 && v.abs() <= 0.9) ||
-            (u.abs() <= 0.9 && v.abs() <= 0.35);
+        return (u.abs() <= 0.46 && v.abs() <= 0.94) ||
+            (u.abs() <= 0.94 && v.abs() <= 0.46);
 
       case PatternType.infinity:
-        final inf = pow(u * u + v * v, 2) - 0.8 * (u * u - v * v);
-        return inf <= 0.12 && u.abs() <= 0.95 && v.abs() <= 0.6;
+        final inf = pow(u * u + v * v, 2) - 0.95 * (u * u - v * v);
+        return inf <= 0.35 && u.abs() <= 0.96 && v.abs() <= 0.75;
 
       case PatternType.lightning:
-        final inMain = (u - v * 0.5).abs() <= 0.35 && v.abs() <= 0.85;
-        final inBolt = (u + v * 0.4).abs() <= 0.35 && v.abs() <= 0.85;
+        final inMain = (u - v * 0.45).abs() <= 0.48 && v.abs() <= 0.90;
+        final inBolt = (u + v * 0.35).abs() <= 0.48 && v.abs() <= 0.90;
         return inMain || inBolt;
 
       case PatternType.rocket:
-        final inBody = u.abs() <= 0.45 && v.abs() <= 0.75;
-        final inNose = v > 0.4 && v <= (1.0 - u.abs() * 1.2);
-        final inFin = v < -0.3 && u.abs() <= (0.85 - (v + 0.7).abs());
+        final inBody = u.abs() <= 0.55 && v.abs() <= 0.80;
+        final inNose = v > 0.4 && v <= (1.05 - u.abs() * 1.1);
+        final inFin = v < -0.25 && u.abs() <= (0.92 - (v + 0.7).abs() * 0.8);
         return inBody || inNose || inFin;
 
       case PatternType.bow:
-        return (u.abs() >= v.abs() * 0.5 &&
-                u.abs() <= 0.85 &&
-                v.abs() <= 0.7) ||
-            rDist <= 0.3;
+        return (u.abs() >= v.abs() * 0.35 &&
+                u.abs() <= 0.92 &&
+                v.abs() <= 0.82) ||
+            rDist <= 0.48;
 
       case PatternType.swirl:
-        final swirlR = 0.35 + 0.4 * sin(theta * 2 + rDist * 4).abs();
-        return rDist <= swirlR && rDist <= 0.9;
+        final swirlR = 0.65 + 0.32 * sin(theta * 2 + rDist * 3).abs();
+        return rDist <= swirlR && rDist <= 0.95;
     }
   }
 }

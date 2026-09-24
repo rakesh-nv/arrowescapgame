@@ -196,5 +196,53 @@ void main() {
       expect(engine.mistakes, equals(0));
       expect(engine.activeArrows.length, equals(1));
     });
+
+    test('restoreLevel resumes exact board state with previously removed arrows, moves, and lives', () {
+      final arrow1 = ArrowModel(
+        id: 'a1',
+        headRow: 0,
+        headCol: 0,
+        length: 1,
+        direction: ArrowDirection.up,
+      );
+      final arrow2 = ArrowModel(
+        id: 'a2',
+        headRow: 1,
+        headCol: 1,
+        length: 1,
+        direction: ArrowDirection.right,
+      );
+
+      final level = LevelModel(
+        levelNumber: 5,
+        seed: 99,
+        gridSize: 3,
+        difficulty: Difficulty.normal,
+        arrowCount: 2,
+        maxMistakes: 3,
+        arrows: [arrow1, arrow2],
+      );
+
+      engine.restoreLevel(
+        level: level,
+        removedArrowIds: ['a1'],
+        moves: 4,
+        mistakes: 1,
+        lives: 2,
+      );
+
+      expect(engine.moves, equals(4));
+      expect(engine.mistakes, equals(1));
+      expect(engine.lives, equals(2));
+      expect(engine.removedArrowIds, equals(['a1']));
+      expect(engine.activeArrows.map((a) => a.id), equals(['a2']));
+      expect(engine.isComplete(), isFalse);
+
+      // Remaining arrow can be tapped to finish the level
+      final result = engine.tapArrow('a2');
+      expect(result, equals(TapResult.valid));
+      engine.markArrowRemoved('a2');
+      expect(engine.isComplete(), isTrue);
+    });
   });
 }

@@ -1,13 +1,14 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import '../core/ads_config.dart';
+import '../../../services/purchase_service.dart';
+import '../config/ads_config.dart';
 import 'ad_service.dart';
-import 'purchase_service.dart';
 
-/// Concrete AdMob implementation of [IAdService].
+/// Concrete AdMob implementation of [IAdService] using exclusively real production ads.
 ///
-/// Manages AdMob initialization, banner widget creation, preloading,
+/// Manages real AdMob initialization, banner widget creation, preloading,
 /// frequency control, and reward callback tracking.
 class AdMobService extends GetxService implements IAdService {
   late final IPurchaseService _purchaseService;
@@ -40,8 +41,10 @@ class AdMobService extends GetxService implements IAdService {
       if (kDebugMode) {
         debugPrint('[ADS] AdMob initialized successfully');
       }
-      _preloadInterstitial();
-      _preloadRewarded();
+      if (adsEnabled) {
+        _preloadInterstitial();
+        _preloadRewarded();
+      }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[ADS] AdMob initialization error: $e');
@@ -63,14 +66,14 @@ class AdMobService extends GetxService implements IAdService {
           _interstitialAd = ad;
           _isInterstitialLoading = false;
           if (kDebugMode) {
-            debugPrint('[ADS] Interstitial loaded successfully');
+            debugPrint('[ADS] Real interstitial ad loaded successfully');
           }
         },
         onAdFailedToLoad: (error) {
           _interstitialAd = null;
           _isInterstitialLoading = false;
           if (kDebugMode) {
-            debugPrint('[ADS] Interstitial failed to load: ${error.message}');
+            debugPrint('[ADS] Real interstitial failed to load: ${error.message}');
           }
         },
       ),
@@ -96,19 +99,19 @@ class AdMobService extends GetxService implements IAdService {
       return;
     }
 
-    // Guard: Respect 2-minute cooldown
+    // Guard: Enforce minimum cooldown between interstitials
     final now = DateTime.now();
     if (_lastInterstitialTime != null &&
         now.difference(_lastInterstitialTime!) < _interstitialCooldown) {
       if (kDebugMode) {
-        debugPrint('[ADS] Interstitial skipped: 2-minute cooldown active');
+        debugPrint('[ADS] Interstitial skipped: on cooldown');
       }
       return;
     }
 
     if (_interstitialAd == null) {
       if (kDebugMode) {
-        debugPrint('[ADS] Interstitial requested but not ready');
+        debugPrint('[ADS] Real interstitial requested but not ready');
       }
       _preloadInterstitial();
       return;
@@ -121,19 +124,19 @@ class AdMobService extends GetxService implements IAdService {
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         if (kDebugMode) {
-          debugPrint('[ADS] Interstitial shown');
+          debugPrint('[ADS] Real interstitial shown');
         }
       },
       onAdDismissedFullScreenContent: (ad) {
         if (kDebugMode) {
-          debugPrint('[ADS] Interstitial dismissed');
+          debugPrint('[ADS] Real interstitial dismissed');
         }
         ad.dispose();
         _preloadInterstitial();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         if (kDebugMode) {
-          debugPrint('[ADS] Interstitial failed to show: ${error.message}');
+          debugPrint('[ADS] Real interstitial failed to show: ${error.message}');
         }
         ad.dispose();
         _preloadInterstitial();
@@ -164,17 +167,55 @@ class AdMobService extends GetxService implements IAdService {
           _rewardedAd = ad;
           _isRewardedLoading = false;
           if (kDebugMode) {
-            debugPrint('[ADS] Rewarded ad loaded successfully');
+            debugPrint('[ADS] Real rewarded ad loaded successfully');
           }
         },
         onAdFailedToLoad: (error) {
           _rewardedAd = null;
           _isRewardedLoading = false;
           if (kDebugMode) {
-            debugPrint('[ADS] Rewarded ad failed to load: ${error.message}');
+            debugPrint('[ADS] Real rewarded ad failed to load: ${error.message} (Code: ${error.code})');
           }
         },
       ),
+    );
+  }
+
+  /// Loads real rewarded ad on-demand if not preloaded and waits for it
+  Future<bool> _loadRewardedOnDemand() async {
+    if (_rewardedAd != null) return true;
+    _isRewardedLoading = true;
+    final completer = Completer<bool>();
+
+    RewardedAd.load(
+      adUnitId: AdsConfig.rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _isRewardedLoading = false;
+          if (kDebugMode) {
+            debugPrint('[ADS] Real rewarded ad loaded on-demand');
+          }
+          if (!completer.isCompleted) completer.complete(true);
+        },
+        onAdFailedToLoad: (error) {
+          _rewardedAd = null;
+          _isRewardedLoading = false;
+          if (kDebugMode) {
+            debugPrint('[ADS] Real rewarded ad failed on-demand: ${error.message} (Code: ${error.code})');
+          }
+          if (!completer.isCompleted) completer.complete(false);
+        },
+      ),
+    );
+
+    return completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        _isRewardedLoading = false;
+        return false;
+      },
     );
   }
 
@@ -196,35 +237,45 @@ class AdMobService extends GetxService implements IAdService {
   Future<bool> _showRewarded(String rewardType) async {
     if (_rewardedAd == null) {
       if (kDebugMode) {
-        debugPrint('[ADS] Rewarded ad requested for $rewardType but not ready');
+        debugPrint('[ADS] Real rewarded ad not ready for $rewardType, loading now...');
       }
-      _preloadRewarded();
-      return false;
+      final loaded = await _loadRewardedOnDemand();
+      if (!loaded || _rewardedAd == null) {
+        if (kDebugMode) {
+          debugPrint('[ADS] Failed to load real rewarded ad for $rewardType');
+        }
+        return false;
+      }
     }
 
     final ad = _rewardedAd!;
     _rewardedAd = null;
     bool userEarnedReward = false;
 
+    // Completer resolves AFTER the ad is fully dismissed, carrying the reward flag.
+    final completer = Completer<bool>();
+
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         if (kDebugMode) {
-          debugPrint('[ADS] Rewarded ad shown for $rewardType');
+          debugPrint('[ADS] Real rewarded ad shown for $rewardType');
         }
       },
       onAdDismissedFullScreenContent: (ad) {
         if (kDebugMode) {
-          debugPrint('[ADS] Rewarded ad dismissed');
+          debugPrint('[ADS] Real rewarded ad dismissed (earned: $userEarnedReward)');
         }
         ad.dispose();
         _preloadRewarded();
+        if (!completer.isCompleted) completer.complete(userEarnedReward);
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         if (kDebugMode) {
-          debugPrint('[ADS] Rewarded ad failed to show: ${error.message}');
+          debugPrint('[ADS] Real rewarded ad failed to show: ${error.message}');
         }
         ad.dispose();
         _preloadRewarded();
+        if (!completer.isCompleted) completer.complete(false);
       },
     );
 
@@ -233,25 +284,18 @@ class AdMobService extends GetxService implements IAdService {
         onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
           userEarnedReward = true;
           if (kDebugMode) {
-            debugPrint('[ADS] Reward earned for $rewardType! Amount: ${reward.amount} ${reward.type}');
+            debugPrint('[ADS] User earned real reward: ${reward.amount} ${reward.type} for $rewardType');
           }
         },
       );
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[ADS] Exception showing rewarded ad: $e');
+        debugPrint('[ADS] Exception showing real rewarded ad: $e');
       }
       _preloadRewarded();
       return false;
     }
 
-    return userEarnedReward;
-  }
-
-  @override
-  void onClose() {
-    _interstitialAd?.dispose();
-    _rewardedAd?.dispose();
-    super.onClose();
+    return completer.future;
   }
 }

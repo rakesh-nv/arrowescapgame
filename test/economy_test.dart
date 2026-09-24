@@ -77,5 +77,35 @@ void main() {
       expect(economy.coins.value, equals(initialCoins - AppConstants.coinsHintCost));
       expect(economy.hints.value, equals(initialHints + 1));
     });
+
+    test('Using 3 starting hints depletes hints, and ad reward gives 1 hint', () {
+      // Starting hints: 3
+      expect(economy.hints.value, equals(3));
+      expect(economy.hasHints, isTrue);
+
+      // Use hint 1
+      expect(economy.useHint(), isTrue);
+      expect(economy.hints.value, equals(2));
+
+      // Use hint 2
+      expect(economy.useHint(), isTrue);
+      expect(economy.hints.value, equals(1));
+
+      // Use hint 3 (all 3 used)
+      expect(economy.useHint(), isTrue);
+      expect(economy.hints.value, equals(0));
+      expect(economy.hasHints, isFalse);
+      expect(economy.useHint(), isFalse);
+
+      // After watching ad, grant 1 hint
+      economy.addHints(1);
+      expect(economy.hints.value, equals(1));
+      expect(economy.hasHints, isTrue);
+
+      // Hint can be used again
+      expect(economy.useHint(), isTrue);
+      expect(economy.hints.value, equals(0));
+      expect(economy.hasHints, isFalse);
+    });
   });
 }

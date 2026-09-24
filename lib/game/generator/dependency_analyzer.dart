@@ -138,13 +138,13 @@ class DependencyAnalyzer {
       if (a.length < minimumPathLen) {
         minimumPathLen = a.length;
       }
-      if (a.length <= 4) {
+      if (a.length <= 9) {
         shortCount++;
-      } else if (a.length <= 14) {
+      } else if (a.length <= 15) {
         mediumCount++;
-      } else if (a.length <= 22) {
+      } else if (a.length <= 24) {
         longCount++;
-      } else if (a.length <= 32) {
+      } else if (a.length <= 34) {
         veryLongCount++;
       } else {
         extraLongCount++;

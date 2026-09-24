@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import '../../../core/ads_config.dart';
-import '../../../services/ad_service.dart';
+import '../config/ads_config.dart';
+import '../services/ad_service.dart';
 
-/// Reusable banner ad widget.
+/// Reusable banner ad widget using real production ads.
 ///
 /// Automatically handles initialization, loading, sizing, disposal,
 /// and safe zero-height fallback when ads are disabled or unavailable.
@@ -31,7 +31,9 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     super.initState();
     _adService = Get.find<IAdService>();
     if (_adService.adsEnabled) {
-      _loadBanner();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadBanner();
+      });
     }
   }
 
@@ -50,12 +52,12 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
             _isAdLoaded = true;
           });
           if (kDebugMode) {
-            debugPrint('[ADS] Banner loaded successfully');
+            debugPrint('[ADS] Real banner ad loaded successfully');
           }
         },
         onAdFailedToLoad: (ad, error) {
           if (kDebugMode) {
-            debugPrint('[ADS] Banner failed to load: ${error.message}');
+            debugPrint('[ADS] Real banner ad failed to load: ${error.message} (Code: ${error.code})');
           }
           ad.dispose();
           if (mounted) {

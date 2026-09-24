@@ -7,7 +7,7 @@ import '../../data/models/arrow_direction.dart';
 import '../../services/economy_service.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/coin_badge.dart';
-import '../ads/widgets/banner_ad_widget.dart';
+import '../ads/ads_module.dart';
 import 'home_controller.dart';
 
 class HomeScreen extends StatelessWidget {

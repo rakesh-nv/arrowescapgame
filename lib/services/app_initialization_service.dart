@@ -4,14 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-import '../core/ads_config.dart';
 import '../core/constants/app_constants.dart';
 import '../data/models/game_settings.dart';
 import '../data/models/player_progress.dart';
 import '../data/repositories/level_repository.dart';
 import '../data/repositories/progress_repository.dart';
-import 'ad_service.dart';
-import 'admob_service.dart';
+import '../modules/ads/ads_module.dart';
 import 'analytics_service.dart';
 import 'audio_service.dart';
 import 'economy_service.dart';
@@ -221,26 +219,7 @@ class AppInitializationService {
   }
 
   static Future<void> initializeAds() async {
-    if (!Get.isRegistered<IPurchaseService>()) {
-      Get.put<IPurchaseService>(NoOpPurchaseService(), permanent: true);
-    }
-
-    IAdService adService;
-    try {
-      final nativeSupported = !kIsWeb &&
-          (Platform.isAndroid || Platform.isIOS) &&
-          await AdsConfig.isSupportedDevice();
-      adService = nativeSupported ? AdMobService() : NoOpAdService();
-    } catch (e) {
-      if (kDebugMode) {
-        print('AdService initialization warning (fallback to NoOp): $e');
-      }
-      adService = NoOpAdService();
-    }
-
-    if (!Get.isRegistered<IAdService>()) {
-      Get.put<IAdService>(adService, permanent: true);
-    }
+    await AdsModule.initialize();
 
     if (!Get.isRegistered<IAnalyticsService>()) {
       Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);

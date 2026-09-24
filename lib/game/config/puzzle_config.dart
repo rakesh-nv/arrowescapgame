@@ -19,11 +19,11 @@ class PuzzleConfig {
   const PuzzleConfig({
     required this.gridRows,
     required this.gridColumns,
-    this.cellSpacing = 30.0,
-    this.pathThickness = 4.0,
-    this.arrowHeadSize = 7.5,
+    this.cellSpacing = 60.0,
+    this.pathThickness = 8.0,
+    this.arrowHeadSize = 15.0,
     this.boardPadding = 20.0,
-    this.minimumClearance = 8.0,
+    this.minimumClearance = 16.0,
   });
 
   /// The clear visual gap between adjacent parallel paths.
@@ -32,52 +32,50 @@ class PuzzleConfig {
 
   /// Default configuration for a given grid size (e.g. 10x10).
   factory PuzzleConfig.forGrid(int gridSize) {
-    const defaultSpacing = 30.0;
-    const defaultThickness = 4.0;
+    const defaultSpacing = 60.0;
+    const defaultThickness = 8.0;
     return PuzzleConfig(
       gridRows: gridSize,
       gridColumns: gridSize,
       cellSpacing: defaultSpacing,
       pathThickness: defaultThickness,
-      arrowHeadSize: 7.5,
+      arrowHeadSize: 15.0,
       boardPadding: 20.0,
-      minimumClearance: 8.0,
+      minimumClearance: 16.0,
     );
   }
 
   /// Responsive factory that dynamically adapts to device dimensions.
   ///
-  /// Examples:
-  /// - 390px phone: ~8–10 columns, ~28–30px cellSpacing
-  /// - 412px phone: ~9–11 columns, ~30–32px cellSpacing
-  /// - Tablet (>600px): scales columns and maintains comfortable spacing
+  /// Cell spacing and arrow dimensions are doubled for rich readability.
   factory PuzzleConfig.adaptive({
     required double screenWidth,
     double screenHeight = 800.0,
     int? overrideGridSize,
-    double boardPadding = 20.0,
+    double boardPadding = 8.0,
   }) {
     final int cols;
     if (overrideGridSize != null && overrideGridSize > 0) {
       cols = overrideGridSize;
     } else if (screenWidth < 360) {
-      cols = 8;
-    } else if (screenWidth < 400) {
-      cols = 9;
-    } else if (screenWidth < 480) {
-      cols = 10;
-    } else if (screenWidth < 600) {
-      cols = 12;
-    } else {
       cols = 14;
+    } else if (screenWidth < 400) {
+      cols = 16;
+    } else if (screenWidth < 480) {
+      cols = 18;
+    } else if (screenWidth < 600) {
+      cols = 20;
+    } else {
+      cols = 20;
     }
     final int rows = cols;
 
     final usableWidth = max(240.0, screenWidth - boardPadding * 2);
-    final rawSpacing = (usableWidth / cols).clamp(26.0, 36.0);
-    // Balanced, readable arrow stroke (3.5 - 4.8px)
-    final thickness = (rawSpacing * 0.13).clamp(3.5, 4.8);
-    final head = (thickness * 1.8).clamp(6.8, 8.5);
+    // Double the cell spacing (36px to 80px)
+    final rawSpacing = ((usableWidth / cols) * 2.0).clamp(36.0, 80.0);
+    // Doubled solid arrow stroke and arrowhead proportions
+    final thickness = (rawSpacing * 0.36).clamp(10.0, 22.0);
+    final head = (thickness * 1.70).clamp(18.0, 36.0);
 
     return PuzzleConfig(
       gridRows: rows,
@@ -86,7 +84,7 @@ class PuzzleConfig {
       pathThickness: thickness,
       arrowHeadSize: head,
       boardPadding: boardPadding,
-      minimumClearance: 8.0,
+      minimumClearance: 16.0,
     );
   }
 

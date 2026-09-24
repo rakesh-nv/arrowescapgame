@@ -5,7 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_strings.dart';
 import '../../services/economy_service.dart';
 import '../../widgets/coin_badge.dart';
-import '../ads/widgets/banner_ad_widget.dart';
+import '../ads/ads_module.dart';
 import 'level_select_controller.dart';
 import 'widgets/level_map_background.dart';
 import 'widgets/level_map_node.dart';

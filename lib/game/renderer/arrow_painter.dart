@@ -159,9 +159,9 @@ class ArrowPainter extends CustomPainter {
 
     canvas.save();
 
-    // Balanced, readable arrow stroke and arrowhead sizing.
-    final strokeWidth = (cellSize * 0.13).clamp(3.5, 4.8);
-    final headSize = (strokeWidth * 1.8).clamp(6.8, 8.5);
+    // Doubled arrow stroke and arrowhead sizing for large cell visuals.
+    final strokeWidth = (cellSize * 0.36).clamp(10.0, 22.0);
+    final headSize = (strokeWidth * 1.70).clamp(18.0, 36.0);
     final progress = snakeProgress ?? 0.0;
     final shift = snakeProgress == null
         ? 0.0
@@ -170,8 +170,8 @@ class ArrowPainter extends CustomPainter {
     final lastPt = animated.last + shakeOffset;
     final headDirection = motionPath.directionAt(shift + motionPath.length);
     final tip = Offset(
-      lastPt.dx + headDirection.dx * (cellSize * 0.38),
-      lastPt.dy + headDirection.dy * (cellSize * 0.38),
+      lastPt.dx + headDirection.dx * (cellSize * 0.35),
+      lastPt.dy + headDirection.dy * (cellSize * 0.35),
     );
 
     // Build the continuous snake path from tail to head
@@ -268,7 +268,7 @@ class ArrowPainter extends CustomPainter {
 
     final path = Path();
     final hs = headSize;
-    final halfWidth = hs * 0.42;
+    final halfWidth = hs * 0.52;
 
     final normal = Offset(-direction.dy, direction.dx);
     final base = tip - direction * hs;
