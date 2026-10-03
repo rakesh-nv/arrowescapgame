@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../widgets/heart_display.dart';
 
 class GameOverDialog extends StatefulWidget {
@@ -8,7 +9,7 @@ class GameOverDialog extends StatefulWidget {
   final VoidCallback onHome;
   /// Called when user taps "Watch Ad". Receives a callback the caller
   /// should invoke with [true] if the ad was successfully watched (grants
-  /// 3 lives) or [false] if it was skipped/unavailable.
+  /// lives) or [false] if it was skipped/unavailable.
   final Future<bool> Function() onWatchAd;
 
   const GameOverDialog({

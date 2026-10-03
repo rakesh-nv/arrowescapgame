@@ -48,6 +48,19 @@ void main() {
       expect(find.byIcon(Icons.favorite_outline_rounded), findsOneWidget);
     });
 
+    testWidgets('HeartDisplay renders 3 empty outline hearts when lives is 0', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: HeartDisplay(lives: 0),
+          ),
+        ),
+      );
+
+      expect(find.byIcon(Icons.favorite_rounded), findsNothing);
+      expect(find.byIcon(Icons.favorite_outline_rounded), findsNWidgets(3));
+    });
+
     testWidgets('PrimaryButton displays label and fires callback on tap', (WidgetTester tester) async {
       bool tapped = false;
 

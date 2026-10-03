@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import 'package:get/get.dart';
 import '../../data/models/daily_challenge.dart';
 import '../../data/repositories/level_repository.dart';
@@ -11,20 +13,42 @@ class DailyChallengeController extends GetxController {
 
   final RxBool isCompletedToday = false.obs;
   final RxInt streak = 0.obs;
-  late LevelModel challengeLevel;
+  final RxBool isChallengeLoading = true.obs;
+  final RxString challengeLoadError = ''.obs;
+  LevelModel? _challengeLevel;
   late String todayKey;
+
+  LevelModel? get challengeLevel => _challengeLevel;
 
   @override
   void onInit() {
     super.onInit();
     todayKey = DailyChallenge.todayKey();
-    final seed = DailyChallenge.seedFromDate(todayKey);
-    challengeLevel = LevelRepository.getDailyChallenge(seed);
-
     final p = _progress.progress;
     streak.value = p.dailyStreak;
     isCompletedToday.value = p.lastDailyCompletedDate == todayKey;
+    _loadChallenge();
   }
+
+  /// Level generation is CPU-intensive. Run it outside the UI isolate so the
+  /// route can render and remain responsive on lower-end devices.
+  Future<void> _loadChallenge() async {
+    isChallengeLoading.value = true;
+    challengeLoadError.value = '';
+    final seed = DailyChallenge.seedFromDate(todayKey);
+
+    try {
+      _challengeLevel = await Isolate.run(
+        () => LevelRepository.getDailyChallenge(seed),
+      );
+    } catch (_) {
+      challengeLoadError.value = 'Could not prepare today\'s challenge.';
+    } finally {
+      isChallengeLoading.value = false;
+    }
+  }
+
+  Future<void> retryChallengeLoad() => _loadChallenge();
 
   Future<void> onChallengeComplete(int stars) async {
     if (isCompletedToday.value) return;

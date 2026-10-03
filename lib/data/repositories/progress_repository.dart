@@ -47,6 +47,18 @@ class ProgressRepository extends GetxService {
 
   Future<void> updateTheme(String themeId) async {
     final p = progress;
+    if (!p.unlockedThemes.contains(themeId)) {
+      p.unlockedThemes.add(themeId);
+    }
+    p.currentThemeId = themeId;
+    await _storage.saveProgress(p);
+  }
+
+  Future<void> unlockTheme(String themeId) async {
+    final p = progress;
+    if (!p.unlockedThemes.contains(themeId)) {
+      p.unlockedThemes.add(themeId);
+    }
     p.currentThemeId = themeId;
     await _storage.saveProgress(p);
   }

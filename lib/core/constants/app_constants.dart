@@ -6,8 +6,8 @@ class AppConstants {
   static const int fixedGridSize = 20;
   static const int startingCoins = 100;
   static const int startingHints = 3;
-  static const int startingLives = 3;
-  static const int maxLives = 3;
+  static const int startingLives = 4;
+  static const int maxLives = 4;
 
   static const int coinsPerLevelComplete = 25;
   static const int coinsFor3Stars = 10;

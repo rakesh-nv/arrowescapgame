@@ -32,6 +32,9 @@ class PlayerProgress extends HiveObject {
   @HiveField(8)
   bool hasSeenTutorial;
 
+  @HiveField(9)
+  List<String> unlockedThemes;
+
   PlayerProgress({
     this.highestUnlockedLevel = 1,
     Map<int, int>? levelStars,
@@ -42,7 +45,16 @@ class PlayerProgress extends HiveObject {
     this.lastDailyCompletedDate,
     this.removeAds = false,
     this.hasSeenTutorial = false,
-  }) : levelStars = levelStars ?? {};
+    List<String>? unlockedThemes,
+  })  : levelStars = levelStars ?? {},
+        unlockedThemes = unlockedThemes ?? ['classic', 'ocean'];
+
+  bool isThemeUnlocked(String themeId) {
+    if (themeId == 'classic' || themeId == 'ocean' || themeId == currentThemeId) {
+      return true;
+    }
+    return unlockedThemes.contains(themeId);
+  }
 
   int starsForLevel(int level) => levelStars[level] ?? 0;
 

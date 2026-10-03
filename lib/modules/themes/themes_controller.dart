@@ -11,18 +11,26 @@ class ThemesController extends GetxController {
   final IAnalyticsService _analytics = Get.find<IAnalyticsService>();
 
   final RxString activeThemeId = 'classic'.obs;
+  final RxList<String> unlockedThemeIds = <String>[].obs;
   final List<ThemeModel> allThemes = ThemeRepository.allThemes;
 
   @override
   void onInit() {
     super.onInit();
     activeThemeId.value = _progress.progress.currentThemeId;
+    final unlocked = List<String>.from(_progress.progress.unlockedThemes);
+    if (!unlocked.contains('classic')) unlocked.add('classic');
+    if (!unlocked.contains('ocean')) unlocked.add('ocean');
+    if (!unlocked.contains(activeThemeId.value)) {
+      unlocked.add(activeThemeId.value);
+    }
+    unlockedThemeIds.assignAll(unlocked);
   }
 
   bool isUnlocked(ThemeModel theme) {
     if (theme.isFree) return true;
-    return _progress.progress.levelStars.values.fold(0, (s, v) => s + v) >=
-        theme.coinsRequired; // using coins purchased check
+    if (theme.id == activeThemeId.value) return true;
+    return unlockedThemeIds.contains(theme.id);
   }
 
   bool canAfford(ThemeModel theme) {
@@ -31,7 +39,11 @@ class ThemesController extends GetxController {
 
   Future<bool> unlockTheme(ThemeModel theme) async {
     if (!_economy.spendCoins(theme.coinsRequired)) return false;
-    await selectTheme(theme);
+    if (!unlockedThemeIds.contains(theme.id)) {
+      unlockedThemeIds.add(theme.id);
+    }
+    await _progress.unlockTheme(theme.id);
+    activeThemeId.value = theme.id;
     _analytics.logEvent(AnalyticsEvent.themeUnlocked,
         params: {'themeId': theme.id});
     return true;
@@ -39,6 +51,9 @@ class ThemesController extends GetxController {
 
   Future<void> selectTheme(ThemeModel theme) async {
     activeThemeId.value = theme.id;
+    if (!unlockedThemeIds.contains(theme.id)) {
+      unlockedThemeIds.add(theme.id);
+    }
     await _progress.updateTheme(theme.id);
   }
 }

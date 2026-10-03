@@ -68,7 +68,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     ever(_controller.isCompleting, (bool active) {
       if (active) _rewardController.forward(from: 0);
     });
-    // Listen for game over (all 3 lives lost)
+    // Listen for game over (all lives lost)
     ever(_controller.isGameOver, (bool over) {
       if (over && !_gameOverShown) {
         _gameOverShown = true;
@@ -327,7 +327,7 @@ class _GameplayScreenState extends State<GameplayScreen>
           ),
 
           // Hearts
-          Obx(() => HeartDisplay(lives: _controller.lives.value)),
+          Obx(() => HeartDisplay(lives: _controller.displayHearts)),
         ],
       ),
     );

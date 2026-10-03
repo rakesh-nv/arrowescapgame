@@ -88,6 +88,8 @@ class ThemesScreen extends StatelessWidget {
             Expanded(
               child: Obx(() {
                 final activeId = controller.activeThemeId.value;
+                // Track unlocked themes list for reactivity
+                final _ = controller.unlockedThemeIds.length;
                 final coins = economy.coins.value;
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
@@ -102,7 +104,7 @@ class ThemesScreen extends StatelessWidget {
                   itemBuilder: (_, i) {
                     final theme = controller.allThemes[i];
                     final isActive = activeId == theme.id;
-                    final isUnlocked = theme.isFree;
+                    final isUnlocked = controller.isUnlocked(theme);
                     return _ThemeCard(
                       theme: theme,
                       isActive: isActive,
@@ -261,7 +263,7 @@ class _ThemeCard extends StatelessWidget {
               ),
 
             // Lock overlay
-            if (!isUnlocked)
+            if (!isUnlocked && !isActive)
               Positioned(
                 top: 10,
                 right: 10,

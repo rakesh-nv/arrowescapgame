@@ -137,6 +137,26 @@ class DailyChallengeScreen extends StatelessWidget {
                       ],
                     );
                   }
+                  if (controller.isChallengeLoading.value) {
+                    return const PrimaryButton(
+                      label: 'Preparing challenge...',
+                      onTap: null,
+                      backgroundColor: Colors.white,
+                      textColor: Color(0xFF7C3AED),
+                      width: double.infinity,
+                      icon: Icons.hourglass_top_rounded,
+                    );
+                  }
+                  if (controller.challengeLoadError.value.isNotEmpty) {
+                    return PrimaryButton(
+                      label: 'Try Again',
+                      onTap: controller.retryChallengeLoad,
+                      backgroundColor: Colors.white,
+                      textColor: const Color(0xFF7C3AED),
+                      width: double.infinity,
+                      icon: Icons.refresh_rounded,
+                    );
+                  }
                   return PrimaryButton(
                     label: 'Start Challenge',
                     onTap: () => _launchChallenge(controller),
@@ -155,14 +175,16 @@ class DailyChallengeScreen extends StatelessWidget {
   }
 
   void _launchChallenge(DailyChallengeController dc) {
+    final level = dc.challengeLevel;
+    if (level == null) return;
     final gc = Get.isRegistered<GameplayController>()
         ? Get.find<GameplayController>()
         : Get.put(GameplayController());
-    gc.loadLevelModel(dc.challengeLevel);
+    gc.loadLevelModel(level);
     ever(gc.isComplete, (bool done) {
       if (done) dc.onChallengeComplete(gc.calculatedStars);
     });
-    Get.toNamed('/gameplay', arguments: dc.challengeLevel);
+    Get.toNamed('/gameplay', arguments: level);
   }
 
   String _monthName(int month) {

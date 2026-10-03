@@ -18,7 +18,7 @@ class PlayerProgressAdapter extends TypeAdapter<PlayerProgress> {
     };
     return PlayerProgress(
       highestUnlockedLevel: fields[0] as int,
-      levelStars: (fields[1] as Map).cast<int, int>(),
+      levelStars: (fields[1] as Map?)?.cast<int, int>(),
       coins: fields[2] as int,
       hints: fields[3] as int,
       currentThemeId: fields[4] as String,
@@ -26,13 +26,14 @@ class PlayerProgressAdapter extends TypeAdapter<PlayerProgress> {
       lastDailyCompletedDate: fields[6] as String?,
       removeAds: fields[7] as bool,
       hasSeenTutorial: fields[8] as bool,
+      unlockedThemes: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, PlayerProgress obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.highestUnlockedLevel)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class PlayerProgressAdapter extends TypeAdapter<PlayerProgress> {
       ..writeByte(7)
       ..write(obj.removeAds)
       ..writeByte(8)
-      ..write(obj.hasSeenTutorial);
+      ..write(obj.hasSeenTutorial)
+      ..writeByte(9)
+      ..write(obj.unlockedThemes);
   }
 
   @override

@@ -28,7 +28,7 @@ class GameplayController extends GetxController {
 
   // ── Observable state ──────────────────────────────────────────────────────
   final RxList<ArrowModel> arrows = <ArrowModel>[].obs;
-  final RxInt lives = 3.obs;
+  final RxInt lives = AppConstants.startingLives.obs;
   final RxInt moves = 0.obs;
   final RxInt mistakes = 0.obs;
   final RxBool isComplete = false.obs;
@@ -53,6 +53,10 @@ class GameplayController extends GetxController {
   int get currentLevelNumber => levelNumber.value;
   LevelModel? get currentLevel => _level.value;
   Difficulty get difficulty => _level.value?.difficulty ?? Difficulty.easy;
+
+  /// Number of filled hearts to display in the UI (0 to 3).
+  /// Players have 4 attempts: 4->3 hearts, 3->2 hearts, 2->1 heart, 1->0 hearts (last chance danger state).
+  int get displayHearts => (lives.value - 1).clamp(0, 3);
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -90,7 +94,7 @@ class GameplayController extends GetxController {
       final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
       final moves = saved['moves'] as int? ?? 0;
       final mistakes = saved['mistakes'] as int? ?? 0;
-      final lives = saved['lives'] as int? ?? 3;
+      final lives = saved['lives'] as int? ?? AppConstants.startingLives;
 
       if (removed.isNotEmpty && removed.length < level.arrows.length) {
         _engine.restoreLevel(
@@ -128,7 +132,7 @@ class GameplayController extends GetxController {
       final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
       final moves = saved['moves'] as int? ?? 0;
       final mistakes = saved['mistakes'] as int? ?? 0;
-      final lives = saved['lives'] as int? ?? 3;
+      final lives = saved['lives'] as int? ?? AppConstants.startingLives;
 
       if (removed.isNotEmpty && removed.length < level.arrows.length) {
         _engine.restoreLevel(
@@ -296,12 +300,12 @@ class GameplayController extends GetxController {
     _syncState();
   }
 
-  /// Shows a rewarded ad. If the user watches it fully, grants 3 lives and
+  /// Shows a rewarded ad. If the user watches it fully, grants lives and
   /// clears the game-over state so play can resume.
   Future<bool> watchAdContinue() async {
     final granted = await _adService.showRewardedLife();
     if (granted) {
-      _engine.restoreLives(3);
+      _engine.restoreLives(AppConstants.startingLives);
       isGameOver.value = false;
       _syncState();
       _haptic.lightTap();

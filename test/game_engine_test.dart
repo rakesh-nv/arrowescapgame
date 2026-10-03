@@ -244,5 +244,51 @@ void main() {
       engine.markArrowRemoved('a2');
       expect(engine.isComplete(), isTrue);
     });
+
+    test('Level starts with 4 lives and user runs out of lives on the 4th wrong attempt', () {
+      final blockedArrow = ArrowModel(
+        id: 'a1',
+        headRow: 1,
+        headCol: 1,
+        length: 2,
+        direction: ArrowDirection.right,
+      );
+      final blockingArrow = ArrowModel(
+        id: 'a2',
+        headRow: 1,
+        headCol: 3,
+        length: 1,
+        direction: ArrowDirection.right,
+      );
+
+      final level = LevelModel(
+        levelNumber: 1,
+        seed: 42,
+        gridSize: 4,
+        difficulty: Difficulty.easy,
+        arrowCount: 2,
+        maxMistakes: 4,
+        arrows: [blockedArrow, blockingArrow],
+      );
+
+      engine.loadLevel(level);
+      expect(engine.lives, equals(4));
+
+      // 1st wrong attempt
+      expect(engine.tapArrow('a1'), equals(TapResult.blocked));
+      expect(engine.lives, equals(3));
+
+      // 2nd wrong attempt
+      expect(engine.tapArrow('a1'), equals(TapResult.blocked));
+      expect(engine.lives, equals(2));
+
+      // 3rd wrong attempt (still has 1 life, not out of lives yet)
+      expect(engine.tapArrow('a1'), equals(TapResult.blocked));
+      expect(engine.lives, equals(1));
+
+      // 4th wrong attempt (out of lives!)
+      expect(engine.tapArrow('a1'), equals(TapResult.blocked));
+      expect(engine.lives, equals(0));
+    });
   });
 }

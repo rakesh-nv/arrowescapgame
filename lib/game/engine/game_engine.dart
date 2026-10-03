@@ -1,3 +1,4 @@
+import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
 import '../../data/models/level_model.dart';
@@ -33,7 +34,7 @@ class GameEngine {
   Map<String, ArrowModel> _arrows = {};
   int _gridSize = 4;
 
-  int _lives = 3;
+  int _lives = AppConstants.startingLives;
   int _moves = 0;
   int _mistakes = 0;
 
@@ -71,7 +72,7 @@ class GameEngine {
   void loadLevel(LevelModel level) {
     _level = level;
     _gridSize = level.gridSize;
-    _lives = 3;
+    _lives = AppConstants.startingLives;
     _moves = 0;
     _mistakes = 0;
     _undoStack.clear();
@@ -99,7 +100,7 @@ class GameEngine {
     }
     _moves = moves;
     _mistakes = mistakes;
-    _lives = lives.clamp(1, 3);
+    _lives = lives.clamp(1, AppConstants.maxLives);
   }
 
   /// Reset the current level to its initial state
@@ -159,7 +160,7 @@ class GameEngine {
       _arrows[arrowId] = arrow.copyWith(state: ArrowState.blocked);
       _mistakes++;
       // Lose 1 life on every mistake
-      _lives = (_lives - 1).clamp(0, 3);
+      _lives = (_lives - 1).clamp(0, AppConstants.maxLives);
       return TapResult.blocked;
     }
   }
@@ -217,8 +218,8 @@ class GameEngine {
   }
 
   /// Restore lives to [count] (called after a rewarded ad is watched).
-  void restoreLives([int count = 3]) {
-    _lives = count.clamp(1, 3);
+  void restoreLives([int count = AppConstants.startingLives]) {
+    _lives = count.clamp(1, AppConstants.maxLives);
   }
 
   // ── Hint ──────────────────────────────────────────────────────────────────
