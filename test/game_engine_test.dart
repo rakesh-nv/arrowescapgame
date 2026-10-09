@@ -290,5 +290,42 @@ void main() {
       expect(engine.tapArrow('a1'), equals(TapResult.blocked));
       expect(engine.lives, equals(0));
     });
+
+    test('Stale escape completion after undo or reset does not remove the arrow', () {
+      final arrow = ArrowModel(
+        id: 'a1',
+        headRow: 0,
+        headCol: 0,
+        length: 1,
+        direction: ArrowDirection.up,
+      );
+
+      final level = LevelModel(
+        levelNumber: 1,
+        seed: 42,
+        gridSize: 3,
+        difficulty: Difficulty.easy,
+        arrowCount: 1,
+        maxMistakes: 3,
+        arrows: [arrow],
+      );
+
+      engine.loadLevel(level);
+
+      // Undo while the escape animation is still running.
+      expect(engine.tapArrow('a1'), equals(TapResult.valid));
+      engine.undo();
+      engine.markArrowRemoved('a1');
+      expect(engine.activeArrows.single.state, equals(ArrowState.normal));
+      expect(engine.isComplete(), isFalse);
+
+      // Reset while the escape animation is still running.
+      expect(engine.tapArrow('a1'), equals(TapResult.valid));
+      engine.reset();
+      engine.markArrowRemoved('a1');
+      expect(engine.activeArrows.single.state, equals(ArrowState.normal));
+      expect(engine.isComplete(), isFalse);
+    });
   });
 }
+

@@ -62,5 +62,8 @@ class PlayerProgress extends HiveObject {
 
   bool isLevelCompleted(int level) => levelStars.containsKey(level);
 
-  int get totalStars => levelStars.values.fold(0, (sum, s) => sum + s);
+  // Older builds stored daily wins as level 0; campaign levels start at 1.
+  int get totalStars => levelStars.entries
+      .where((e) => e.key >= 1)
+      .fold(0, (sum, e) => sum + e.value);
 }

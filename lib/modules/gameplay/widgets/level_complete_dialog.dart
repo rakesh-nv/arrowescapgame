@@ -11,6 +11,13 @@ class LevelCompleteDialog extends StatefulWidget {
   final int stars;
   final int levelNumber;
   final int moves;
+
+  /// Coins paid for this win. Defaults to the campaign reward for [stars].
+  final int? coinsEarned;
+
+  /// A daily win: no level number, and the primary button returns to the
+  /// daily screen instead of opening the next level.
+  final bool isDailyChallenge;
   final VoidCallback onNextLevel;
   final VoidCallback onReplay;
   final VoidCallback onHome;
@@ -20,6 +27,8 @@ class LevelCompleteDialog extends StatefulWidget {
     required this.stars,
     required this.levelNumber,
     required this.moves,
+    this.coinsEarned,
+    this.isDailyChallenge = false,
     required this.onNextLevel,
     required this.onReplay,
     required this.onHome,
@@ -37,6 +46,9 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
   final List<Animation<double>> _starAnims = [];
   bool _hasDoubledCoins = false;
   bool _isLoadingAd = false;
+
+  int get _baseCoins =>
+      widget.coinsEarned ?? 25 + (widget.stars == 3 ? 10 : 0);
 
   @override
   void initState() {
@@ -133,7 +145,9 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
               ),
 
               Text(
-                'Level ${widget.levelNumber}  •  ${widget.moves} moves',
+                widget.isDailyChallenge
+                    ? '${AppStrings.dailyChallengeTitle}  •  ${widget.moves} moves'
+                    : 'Level ${widget.levelNumber}  •  ${widget.moves} moves',
                 style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.textSecondary,
@@ -171,7 +185,8 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
 
               const SizedBox(height: 12),
 
-              // Coins earned
+              // Coins earned (none when replaying an already-completed daily)
+              if (_baseCoins > 0)
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -188,8 +203,8 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
                     Flexible(
                       child: Text(
                         _hasDoubledCoins
-                            ? '+${(25 + (widget.stars == 3 ? 10 : 0)) * 2} coins earned (2x Bonus!)'
-                            : '+${25 + (widget.stars == 3 ? 10 : 0)} coins earned',
+                            ? '+${_baseCoins * 2} coins earned (2x Bonus!)'
+                            : '+$_baseCoins coins earned',
                         style: const TextStyle(
                           color: AppColors.coinGoldDark,
                           fontWeight: FontWeight.w700,
@@ -205,7 +220,7 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
               const SizedBox(height: 12),
 
               // 2x Coins Rewarded Ad Button
-              if (!_hasDoubledCoins)
+              if (!_hasDoubledCoins && _baseCoins > 0)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: GestureDetector(
@@ -215,7 +230,7 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
                             setState(() {
                               _isLoadingAd = true;
                             });
-                            final baseCoins = 25 + (widget.stars == 3 ? 10 : 0);
+                            final baseCoins = _baseCoins;
                             final adService = Get.find<IAdService>();
                             final economy = Get.find<EconomyService>();
                             final rewarded = await adService.showRewardedCoins();
@@ -269,7 +284,9 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
 
               // Buttons
               PrimaryButton(
-                label: AppStrings.nextLevel,
+                label: widget.isDailyChallenge
+                    ? AppStrings.backToDaily
+                    : AppStrings.nextLevel,
                 onTap: widget.onNextLevel,
                 width: double.infinity,
                 icon: Icons.arrow_forward_rounded,

@@ -180,7 +180,7 @@ class DailyChallengeScreen extends StatelessWidget {
     final gc = Get.isRegistered<GameplayController>()
         ? Get.find<GameplayController>()
         : Get.put(GameplayController());
-    gc.loadLevelModel(level);
+    gc.loadLevelModel(level, dailyDateKey: dc.todayKey);
     ever(gc.isComplete, (bool done) {
       if (done) dc.onChallengeComplete(gc.calculatedStars);
     });

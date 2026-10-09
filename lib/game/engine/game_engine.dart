@@ -168,7 +168,9 @@ class GameEngine {
   /// Called after the escape animation completes — mark arrow as removed
   void markArrowRemoved(String arrowId) {
     final arrow = _arrows[arrowId];
-    if (arrow == null) return;
+    // Only an arrow mid-escape can finish escaping; undo/reset may have
+    // restored it to normal before a stale animation callback arrives.
+    if (arrow == null || arrow.state != ArrowState.escaping) return;
     _arrows[arrowId] = arrow.copyWith(state: ArrowState.removed);
   }
 

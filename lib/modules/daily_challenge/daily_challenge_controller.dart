@@ -54,19 +54,28 @@ class DailyChallengeController extends GetxController {
     if (isCompletedToday.value) return;
     isCompletedToday.value = true;
 
-    // Update streak
+    // The streak is judged against the challenge's own date ([todayKey]), not
+    // the clock, so finishing after midnight still counts for that challenge.
     final p = _progress.progress;
-    final yesterday = _yesterdayKey();
+    final last = p.lastDailyCompletedDate;
+    // A later date was already recorded (e.g. the next day's challenge was
+    // finished first): pay nothing and leave the streak alone.
+    if (last != null && last.compareTo(todayKey) >= 0) return;
+
     final newStreak =
-        p.lastDailyCompletedDate == yesterday ? p.dailyStreak + 1 : 1;
+        last == previousDateKey(todayKey) ? p.dailyStreak + 1 : 1;
     streak.value = newStreak;
 
     await _progress.updateDailyStreak(streak: newStreak, dateKey: todayKey);
     _economy.awardDailyChallenge();
   }
 
-  String _yesterdayKey() {
-    final yesterday = DateTime.now().subtract(const Duration(days: 1));
-    return '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+  /// The 'YYYY-MM-DD' key of the day before [dateKey].
+  static String previousDateKey(String dateKey) {
+    final parts = dateKey.split('-').map(int.parse).toList();
+    // Noon avoids DST edges when stepping back one day.
+    final prev = DateTime(parts[0], parts[1], parts[2], 12)
+        .subtract(const Duration(days: 1));
+    return '${prev.year}-${prev.month.toString().padLeft(2, '0')}-${prev.day.toString().padLeft(2, '0')}';
   }
 }

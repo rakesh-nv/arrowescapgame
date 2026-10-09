@@ -33,6 +33,7 @@ class AppStrings {
   static const String retry = 'Retry';
   static const String home = 'Home';
   static const String nextLevel = 'Next Level';
+  static const String backToDaily = 'Done';
   static const String replay = 'Replay';
 
   // Difficulty

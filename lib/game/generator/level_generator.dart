@@ -109,6 +109,18 @@ class LevelGenerator {
 
   static final Map<int, LevelPatternSignature> _recentSignatures = {};
 
+  /// Copy of the anti-duplicate history, so generation can run on a background
+  /// isolate with the same history the UI isolate has (and hand it back).
+  static Map<int, LevelPatternSignature> get recentSignatures =>
+      Map.of(_recentSignatures);
+
+  /// Merges signatures produced elsewhere; existing entries are kept.
+  static void restoreSignatures(Map<int, LevelPatternSignature> signatures) {
+    signatures.forEach((level, sig) {
+      _recentSignatures.putIfAbsent(level, () => sig);
+    });
+  }
+
   static double getMinOccupancyForLevel(int levelNumber) {
     if (levelNumber == 1) return 0.35;
     if (levelNumber == 2) return 0.40;

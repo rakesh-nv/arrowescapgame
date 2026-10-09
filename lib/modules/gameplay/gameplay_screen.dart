@@ -50,7 +50,11 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     final args = Get.arguments;
     if (args is LevelModel) {
-      _controller.loadLevelModel(args);
+      // The daily screen has already loaded this board along with its date;
+      // reloading would only repeat the work.
+      if (!identical(_controller.currentLevel, args)) {
+        _controller.loadLevelModel(args);
+      }
     } else if (args is int) {
       _controller.loadLevel(args);
     } else {
@@ -132,9 +136,16 @@ class _GameplayScreenState extends State<GameplayScreen>
         stars: _controller.calculatedStars,
         levelNumber: _controller.currentLevelNumber,
         moves: _controller.moves.value,
+        coinsEarned: _controller.lastCoinsEarned,
+        isDailyChallenge: _controller.isDailyChallenge.value,
         onNextLevel: () {
           Navigator.of(dialogContext).pop();
           _dialogShown = false;
+          if (_controller.isDailyChallenge.value) {
+            // There is no "next" daily; return to the daily screen.
+            Get.back();
+            return;
+          }
           _controller.loadLevel(_controller.currentLevelNumber + 1);
         },
         onReplay: () {
@@ -290,7 +301,9 @@ class _GameplayScreenState extends State<GameplayScreen>
           // Level number
           Obx(
             () => Text(
-              '${AppStrings.level} ${_controller.currentLevelNumber}',
+              _controller.isDailyChallenge.value
+                  ? AppStrings.dailyChallengeTitle
+                  : '${AppStrings.level} ${_controller.currentLevelNumber}',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,

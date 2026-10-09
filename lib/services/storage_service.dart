@@ -106,6 +106,66 @@ class StorageService {
     }
   }
 
+  // ── Daily Challenge Puzzle State ──────────────────────────────────────────
+  // Kept apart from campaign saves: keyed by date, and never touches
+  // 'last_active_level', so a daily run cannot appear as a campaign level.
+
+  static const String _dailyKeyPrefix = 'daily_';
+
+  /// Retrieves the saved in-progress daily challenge for [dateKey] ('YYYY-MM-DD').
+  Map<String, dynamic>? getDailySavedGame(String dateKey) {
+    final key = '$_dailyKeyPrefix$dateKey';
+    final data = (_savedGameBox != null && _savedGameBox!.isOpen)
+        ? _savedGameBox!.get(key)
+        : _inMemorySavedGames[key];
+    if (data == null) return null;
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Saves the in-progress daily challenge for [dateKey], replacing any saved
+  /// daily from another date (that board can never be played again).
+  Future<void> saveDailyGame({
+    required String dateKey,
+    required List<String> removedArrowIds,
+    required int moves,
+    required int mistakes,
+    required int lives,
+  }) async {
+    final key = '$_dailyKeyPrefix$dateKey';
+    final data = {
+      'dateKey': dateKey,
+      'removedArrowIds': List<String>.from(removedArrowIds),
+      'moves': moves,
+      'mistakes': mistakes,
+      'lives': lives,
+      'isDaily': true,
+      'savedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    if (_savedGameBox != null && _savedGameBox!.isOpen) {
+      final stale = _savedGameBox!.keys
+          .where((k) => k is String && k.startsWith(_dailyKeyPrefix) && k != key)
+          .toList();
+      if (stale.isNotEmpty) await _savedGameBox!.deleteAll(stale);
+      await _savedGameBox!.put(key, data);
+    } else {
+      _inMemorySavedGames.removeWhere(
+        (k, _) => k.startsWith(_dailyKeyPrefix) && k != key,
+      );
+      _inMemorySavedGames[key] = data;
+    }
+  }
+
+  /// Clears the saved daily challenge for [dateKey] (e.g. on win or reset).
+  Future<void> clearDailySavedGame(String dateKey) async {
+    final key = '$_dailyKeyPrefix$dateKey';
+    if (_savedGameBox != null && _savedGameBox!.isOpen) {
+      await _savedGameBox!.delete(key);
+    } else {
+      _inMemorySavedGames.remove(key);
+    }
+  }
+
   /// Returns the level number of the most recently active in-progress puzzle, if any.
   int? getLastActiveLevel() {
     if (_savedGameBox != null && _savedGameBox!.isOpen) {

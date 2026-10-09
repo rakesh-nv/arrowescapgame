@@ -237,6 +237,10 @@ class AppInitializationService {
       1,
       AppConstants.totalLevels,
     );
+    // Generate off the UI isolate: doing this synchronously froze the splash
+    // for several seconds and Android killed the app with an ANR.
+    await LevelRepository.prepareLevels(currentLvl, requireFirst: true);
+    // Now cached; this only kicks off the background preload of the next 3.
     LevelRepository.getLevel(currentLvl);
   }
 }

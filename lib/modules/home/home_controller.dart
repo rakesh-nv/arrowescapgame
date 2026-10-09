@@ -28,7 +28,9 @@ class HomeController extends GetxController {
   void loadProgress() {
     highestUnlockedLevel.value = _progress.progress.highestUnlockedLevel;
     totalStars.value = _progress.progress.totalStars;
-    lastActiveLevel.value = _storage.getLastActiveLevel();
+    // Older builds could save a daily run as "level 0"; never offer that.
+    final last = _storage.getLastActiveLevel();
+    lastActiveLevel.value = (last != null && last >= 1) ? last : null;
     _economy.refresh();
   }
 }

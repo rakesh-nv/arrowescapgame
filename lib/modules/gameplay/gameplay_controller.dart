@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
+import '../../data/models/daily_challenge.dart';
 import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
 import '../../data/models/theme_model.dart';
@@ -47,6 +50,18 @@ class GameplayController extends GetxController {
   final RxInt levelNumber = 1.obs;
   final Rx<ThemeModel> currentTheme = ThemeRepository.getById('classic').obs;
 
+  /// True while playing a daily challenge (loaded via [loadLevelModel]).
+  /// Daily runs are saved separately and never touch campaign progress.
+  final RxBool isDailyChallenge = false.obs;
+  String? _dailyDateKey;
+
+  /// Coins the completion dialog should show for the last win.
+  int lastCoinsEarned = 0;
+
+  /// Pending "escape finished" callback; cancelled whenever the board is
+  /// replaced (undo, reset, level load, dispose) so it cannot act on stale state.
+  Timer? _escapeTimer;
+
   ThemeModel get theme => currentTheme.value;
 
   int get gridSize => _engine.gridSize;
@@ -67,6 +82,17 @@ class GameplayController extends GetxController {
     _ensureStartingHints();
   }
 
+  @override
+  void onClose() {
+    _cancelPendingEscape();
+    super.onClose();
+  }
+
+  void _cancelPendingEscape() {
+    _escapeTimer?.cancel();
+    _escapeTimer = null;
+  }
+
   void _ensureStartingHints() {
     if (_economy.hints.value < AppConstants.startingHints) {
       _economy.addHints(AppConstants.startingHints - _economy.hints.value);
@@ -80,9 +106,13 @@ class GameplayController extends GetxController {
   }
 
   void loadLevel(int lvl) {
+    _cancelPendingEscape();
+    animatingArrowId.value = '';
     isComplete.value = false;
     isCompleting.value = false;
     isGameOver.value = false;
+    isDailyChallenge.value = false;
+    _dailyDateKey = null;
     _syncTheme();
     _ensureStartingHints();
     final level = LevelRepository.getLevel(lvl);
@@ -121,13 +151,19 @@ class GameplayController extends GetxController {
     );
   }
 
-  void loadLevelModel(LevelModel level) {
+  /// Loads a daily challenge board. [dailyDateKey] ('YYYY-MM-DD') identifies
+  /// the challenge's date; it defaults to today.
+  void loadLevelModel(LevelModel level, {String? dailyDateKey}) {
+    _cancelPendingEscape();
+    animatingArrowId.value = '';
+    isDailyChallenge.value = true;
+    _dailyDateKey = dailyDateKey ?? DailyChallenge.todayKey();
     _syncTheme();
     _ensureStartingHints();
     _level.value = level;
     levelNumber.value = level.levelNumber;
 
-    final saved = _storage.getSavedGame(level.levelNumber);
+    final saved = _storage.getDailySavedGame(_dailyDateKey!);
     if (saved != null) {
       final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
       final moves = saved['moves'] as int? ?? 0;
@@ -164,6 +200,17 @@ class GameplayController extends GetxController {
     // Don't overwrite if untouched initial state
     if (removed.isEmpty && moves.value == 0 && mistakes.value == 0) return;
 
+    if (isDailyChallenge.value) {
+      _storage.saveDailyGame(
+        dateKey: _dailyDateKey!,
+        removedArrowIds: removed,
+        moves: moves.value,
+        mistakes: mistakes.value,
+        lives: lives.value,
+      );
+      return;
+    }
+
     _storage.saveGame(
       levelNumber: currentLevelNumber,
       removedArrowIds: removed,
@@ -175,6 +222,10 @@ class GameplayController extends GetxController {
 
   /// Clears the saved state for the current level (on win or reset).
   void clearSavedGame() {
+    if (isDailyChallenge.value) {
+      _storage.clearDailySavedGame(_dailyDateKey!);
+      return;
+    }
     _storage.clearSavedGame(currentLevelNumber);
   }
 
@@ -207,13 +258,15 @@ class GameplayController extends GetxController {
         );
 
         // After animation duration, mark removed and check win
-        Future.delayed(
+        _cancelPendingEscape();
+        _escapeTimer = Timer(
           Duration(
             milliseconds: AppConstants.arrowEscapeDurationForLength(
               arrowLength,
             ),
           ),
           () {
+            _escapeTimer = null;
             _engine.markArrowRemoved(arrowId);
             animatingArrowId.value = '';
             hintedArrowId.value = '';
@@ -263,6 +316,7 @@ class GameplayController extends GetxController {
 
   void onUndo() {
     if (!_engine.canUndo) return;
+    _cancelPendingEscape();
     _engine.undo();
     hintedArrowId.value = '';
     animatingArrowId.value = '';
@@ -289,6 +343,7 @@ class GameplayController extends GetxController {
   }
 
   void onReset() {
+    _cancelPendingEscape();
     clearSavedGame();
     _engine.reset();
     hintedArrowId.value = '';
@@ -340,23 +395,43 @@ class GameplayController extends GetxController {
       _haptic.heavyTap();
 
       final stars = _engine.calculateStars();
-      _economy.awardLevelComplete(stars: stars);
 
-      if (_level.value != null) {
-        _progress.markLevelCompleted(
-          levelNumber: _level.value!.levelNumber,
-          stars: stars,
+      if (isDailyChallenge.value) {
+        // A daily win never touches campaign stars, unlocks or level coins.
+        // DailyChallengeController records the streak and pays the daily
+        // reward, once per date.
+        final last = _progress.progress.lastDailyCompletedDate;
+        final alreadyDone = last != null && last.compareTo(_dailyDateKey!) >= 0;
+        lastCoinsEarned = alreadyDone ? 0 : AppConstants.coinsDailyChallenge;
+        _analytics.logEvent(
+          AnalyticsEvent.dailyChallengeCompleted,
+          params: {
+            'date': _dailyDateKey!,
+            'stars': stars,
+            'moves': _engine.moves,
+          },
+        );
+      } else {
+        lastCoinsEarned = AppConstants.coinsPerLevelComplete +
+            (stars == 3 ? AppConstants.coinsFor3Stars : 0);
+        _economy.awardLevelComplete(stars: stars);
+
+        if (_level.value != null) {
+          _progress.markLevelCompleted(
+            levelNumber: _level.value!.levelNumber,
+            stars: stars,
+          );
+        }
+
+        _analytics.logEvent(
+          AnalyticsEvent.levelCompleted,
+          params: {
+            'level': currentLevelNumber,
+            'stars': stars,
+            'moves': _engine.moves,
+          },
         );
       }
-
-      _analytics.logEvent(
-        AnalyticsEvent.levelCompleted,
-        params: {
-          'level': currentLevelNumber,
-          'stars': stars,
-          'moves': _engine.moves,
-        },
-      );
 
       // Let the board glow and the reward travel before the dialog arrives.
       Future.delayed(const Duration(milliseconds: 650), () {
