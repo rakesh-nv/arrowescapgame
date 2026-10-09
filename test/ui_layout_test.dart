@@ -20,7 +20,12 @@ import 'package:arrowescapegame/services/haptic_service.dart';
 import 'package:arrowescapegame/services/storage_service.dart';
 import 'dart:math';
 
+import 'package:arrowescapegame/core/constants/app_strings.dart';
+import 'package:arrowescapegame/data/models/arrow_model.dart';
+import 'package:arrowescapegame/modules/gameplay/gameplay_controller.dart';
+import 'package:arrowescapegame/data/models/arrow_state.dart';
 import 'package:arrowescapegame/data/models/level_model.dart';
+import 'package:arrowescapegame/game/renderer/arrow_widget.dart';
 import 'package:arrowescapegame/game/config/puzzle_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -164,8 +169,10 @@ void main() {
             greaterThanOrEqualTo(ArrowBoardWidget.fitFraction - 0.01),
           );
           final onScreenCell = cell * tc.value.getMaxScaleOnAxis();
+          // Level 1 (a ~31-cell board) still shows its picture with cells of
+          // 12 dp or more on a 360 dp phone before any zoom.
           if (n == 1 && entry.value.width >= 360) {
-            expect(onScreenCell, greaterThanOrEqualTo(14));
+            expect(onScreenCell, greaterThanOrEqualTo(12));
           }
 
           // Tapping the centre of an arrow's cell either hits that arrow or,
@@ -189,6 +196,49 @@ void main() {
         });
       }
     }
+  });
+
+  testWidgets('idle arrows share one layer; only animated arrows get a widget',
+      (tester) async {
+    final level = LevelRepository.getLevel(200);
+    const size = Size(412, 600);
+    Widget board({String? hinted, List<ArrowModel>? arrows}) => MaterialApp(
+          home: Scaffold(
+            body: SizedBox.fromSize(
+              size: size,
+              child: ArrowBoardWidget(
+                arrows: arrows ?? level.arrows,
+                gridSize: level.gridSize,
+                shapeCells: level.shapeCells,
+                theme: ThemeRepository.allThemes.first,
+                hintedArrowId: hinted,
+                onArrowTap: (_) {},
+              ),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(board());
+    await tester.pump(const Duration(milliseconds: 400));
+    // A large board: dozens of arrows, none with its own widget or tickers.
+    expect(level.arrows.length, greaterThan(60));
+    expect(find.byType(ArrowWidget), findsNothing);
+
+    // A hinted arrow gets its own glowing widget.
+    await tester.pumpWidget(board(hinted: level.arrows.first.id));
+    await tester.pump();
+    expect(find.byType(ArrowWidget), findsOneWidget);
+
+    // An arrow that starts escaping animates from its first frame.
+    final escapingId = level.arrows[1].id;
+    await tester.pumpWidget(board(arrows: [
+      for (final a in level.arrows)
+        a.id == escapingId ? a.copyWith(state: ArrowState.escaping) : a,
+    ]));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(ArrowWidget), findsOneWidget);
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('pinch zoom keeps the picture on screen and taps accurate',
@@ -261,6 +311,51 @@ void main() {
     final small = _screenRect(tc.value, picture);
     expect(small.center.dx, closeTo(boardSize.width / 2, 0.5));
     expect(small.center.dy, closeTo(boardSize.height / 2, 0.5));
+  });
+
+  group('Level complete dialog', () {
+    Future<GameplayController> finishLevel(WidgetTester tester) async {
+      _registerServices();
+      await _setScreen(tester, _phones.values.first, 1.0);
+      await tester.pumpWidget(GetMaterialApp(
+        initialRoute: '/',
+        getPages: [
+          GetPage(name: '/', page: () => const Text('Level map')),
+          GetPage(name: '/g', page: () => const GameplayScreen()),
+        ],
+      ));
+      Get.toNamed('/g', arguments: 2);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      final controller = Get.find<GameplayController>();
+      controller.isComplete.value = true;
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(LevelCompleteDialog), findsOneWidget);
+      return controller;
+    }
+
+    testWidgets('back closes the level instead of leaving an empty board',
+        (tester) async {
+      await finishLevel(tester);
+      await tester.binding.handlePopRoute(); // Android back
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(LevelCompleteDialog), findsNothing);
+      expect(find.byType(GameplayScreen), findsNothing);
+      expect(find.text('Level map'), findsOneWidget);
+      Get.reset();
+    });
+
+    testWidgets('Replay stays on the level', (tester) async {
+      await finishLevel(tester);
+      await tester.tap(find.text(AppStrings.replay));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(LevelCompleteDialog), findsNothing);
+      expect(find.byType(GameplayScreen), findsOneWidget);
+      Get.reset();
+    });
   });
 
   group('Screens render without overflow', () {

@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:arrowescapegame/core/constants/app_constants.dart';
@@ -8,6 +9,7 @@ import 'package:arrowescapegame/data/models/level_model.dart';
 import 'package:arrowescapegame/game/config/difficulty_curve.dart';
 import 'package:arrowescapegame/game/generator/dependency_analyzer.dart';
 import 'package:arrowescapegame/game/generator/level_generator.dart';
+import 'package:arrowescapegame/game/generator/level_validator.dart';
 import 'package:arrowescapegame/game/solver/level_solver.dart';
 
 LevelModel _campaign(int n) =>
@@ -34,6 +36,18 @@ void _expectValidBoard(LevelModel level, {String reason = ''}) {
   final solved = LevelSolver.solve(level.arrows, n);
   expect(solved.solvable, isTrue, reason: '$reason not solvable');
   expect(solved.solution.length, level.arrows.length);
+  // The same gate the generator applies before a board can be shown.
+  expect(LevelValidator.problems(level), isEmpty, reason: reason);
+}
+
+/// Smallest on-screen cell (dp) when the picture is fitted into a 360×520 dp
+/// play area, the board space on a small 360×640 phone.
+double _onScreenCell(LevelModel level) {
+  final rows = level.shapeCells.map((c) => c.$1);
+  final cols = level.shapeCells.map((c) => c.$2);
+  final h = rows.reduce(max) - rows.reduce(min) + 2;
+  final w = cols.reduce(max) - cols.reduce(min) + 2;
+  return min(360 * 0.96 / w, 520 * 0.96 / h);
 }
 
 void main() {
@@ -133,6 +147,8 @@ void main() {
       String? prevPattern;
       double? prevScore;
       var fallbackBoards = 0;
+      var maxStubShare = 0.0;
+      var minCell = double.infinity;
 
       for (var n = 1; n <= AppConstants.totalLevels; n++) {
         final level = _campaign(n);
@@ -171,6 +187,23 @@ void main() {
         expect(plan.rounds, greaterThanOrEqualTo(3), reason: reason);
         expect(blocked, greaterThanOrEqualTo(0.3), reason: reason);
 
+        // Long paths, not fragments: few arrows of 3–4 cells (those left
+        // plug narrow gaps of the picture that no longer arrow can reach).
+        final stubs = level.arrows.where((a) => a.length <= 4).length;
+        expect(stubs / level.arrows.length, lessThanOrEqualTo(0.3),
+            reason: '$reason has $stubs short fragments');
+        maxStubShare = max(maxStubShare, stubs / level.arrows.length);
+        // The arrows draw the picture.
+        final filled = level.arrows.fold<int>(0, (s, a) => s + a.length);
+        expect(filled / level.shapeCells.length, greaterThanOrEqualTo(0.85),
+            reason: '$reason fill');
+        // The whole picture fits a small phone before any zoom: a 60-cell-wide
+        // picture gets ~5.8 dp cells. Taps that straddle thin arrows magnify
+        // the board first, so small cells never cost a life.
+        final cell = _onScreenCell(level);
+        expect(cell, greaterThanOrEqualTo(5.5), reason: '$reason cell size');
+        minCell = min(minCell, cell);
+
         // No sudden spikes or drops between neighbouring levels.
         if (prevScore != null) {
           // At most a quarter of the score: no sudden spike or drop.
@@ -189,6 +222,8 @@ void main() {
           blocked,
           score,
           level.shapeCells.length.toDouble(),
+          stubs / level.arrows.length,
+          level.arrows.map((a) => a.length).reduce(max).toDouble(),
         ]);
       }
 
@@ -216,8 +251,17 @@ void main() {
               'rounds ${means[i][5].toStringAsFixed(2)} '
               'blocked ${means[i][6].toStringAsFixed(3)} '
               'score ${means[i][7].toStringAsFixed(1)} '
-              'area ${means[i][8].toStringAsFixed(0)}',
+              'area ${means[i][8].toStringAsFixed(0)} '
+              'stubs ${(means[i][9] * 100).toStringAsFixed(0)}% '
+              'longest ${means[i][10].toStringAsFixed(1)}',
+        'max stub share ${(maxStubShare * 100).toStringAsFixed(0)}%, '
+            'smallest cell ${minCell.toStringAsFixed(1)} dp',
       ].join('\n'));
+
+      // Across every world, short fragments stay rare.
+      for (final m in means) {
+        expect(m[9], lessThanOrEqualTo(0.15));
+      }
 
       // Playable area, arrow length, turns and the overall complexity rise
       // every single world: difficulty is not only "more arrows".
@@ -257,8 +301,10 @@ void main() {
 
   test('Early levels are large picture puzzles, yet fair', () {
     // Earlier curves started at 6×6 (4–6 arrows), then 10×10 (9–13 arrows),
-    // then 16×16 pictures (~17 arrows averaging ~5 cells). Level 1 now opens
-    // with ~30 long arrows on a ~23-cell picture board.
+    // then 16×16 pictures (~17 arrows averaging ~5 cells), then ~23-cell
+    // boards (~29 arrows, a third of them 3–4 cell stubs), then ~26-cell
+    // boards (~35 arrows). Level 1 now opens with ~43 arrows averaging ~9
+    // cells on a ~31-cell picture board.
     for (var n = 1; n <= 5; n++) {
       final level = _campaign(n);
       final reason = 'Level $n';
@@ -267,10 +313,10 @@ void main() {
       final turns = level.arrows.fold<int>(0, (s, a) => s + a.turns);
       final blocked = 1 - plan.initiallyFree / level.arrows.length;
 
-      expect(level.gridSize, greaterThanOrEqualTo(18), reason: reason);
+      expect(level.gridSize, greaterThanOrEqualTo(26), reason: reason);
       // Many long arrows from the very first level.
-      expect(level.arrows.length, greaterThanOrEqualTo(22), reason: reason);
-      expect(m.averagePathLength, greaterThanOrEqualTo(5.5), reason: reason);
+      expect(level.arrows.length, greaterThanOrEqualTo(38), reason: reason);
+      expect(m.averagePathLength, greaterThanOrEqualTo(8), reason: reason);
       expect(turns / level.arrows.length, greaterThanOrEqualTo(1),
           reason: '$reason has 90° turns');
       expect(plan.rounds, greaterThanOrEqualTo(3), reason: reason);
@@ -298,12 +344,13 @@ void main() {
           .reduce((a, b) => a > b ? a : b);
       final turns = level.arrows.fold<int>(0, (s, a) => s + a.turns);
 
-      expect(level.arrows.length, greaterThanOrEqualTo(35), reason: reason);
-      expect(m.averagePathLength, greaterThanOrEqualTo(9), reason: reason);
-      expect(longest, greaterThanOrEqualTo(18), reason: reason);
-      expect(turns / level.arrows.length, greaterThanOrEqualTo(4),
+      expect(level.gridSize, greaterThanOrEqualTo(44), reason: reason);
+      expect(level.arrows.length, greaterThanOrEqualTo(65), reason: reason);
+      expect(m.averagePathLength, greaterThanOrEqualTo(11), reason: reason);
+      expect(longest, greaterThanOrEqualTo(25), reason: reason);
+      expect(turns / level.arrows.length, greaterThanOrEqualTo(5),
           reason: '$reason winding');
-      expect(plan.rounds, greaterThanOrEqualTo(7), reason: reason);
+      expect(plan.rounds, greaterThanOrEqualTo(9), reason: reason);
       // The arrows draw the picture rather than leaving it half empty.
       final filled = level.arrows.fold<int>(0, (s, a) => s + a.length);
       expect(filled / level.shapeCells.length, greaterThanOrEqualTo(0.85),
@@ -319,6 +366,72 @@ void main() {
       }
       expect(remaining, isEmpty, reason: reason);
     }
+  });
+
+  group('LevelValidator', () {
+    LevelModel board(List<ArrowModel> arrows, {Set<(int, int)>? shape}) =>
+        LevelModel(
+          levelNumber: 1,
+          seed: 1,
+          gridSize: 8,
+          difficulty: Difficulty.easy,
+          arrowCount: arrows.length,
+          maxMistakes: 4,
+          arrows: arrows,
+          shapeCells: shape ?? const {},
+        );
+    ArrowModel arrow(String id, List<(int, int)> points) =>
+        ArrowModel(id: id, points: points);
+
+    test('accepts a well-formed, solvable board', () {
+      final level = board([
+        arrow('a', [(0, 0), (0, 1), (0, 2)]), // exits right along row 0
+        arrow('b', [(2, 1), (1, 1), (1, 2), (1, 3)]), // turns, exits right
+      ]);
+      expect(LevelValidator.problems(level), isEmpty);
+    });
+
+    test('rejects overlaps, broken paths and arrows outside the picture', () {
+      expect(
+        LevelValidator.problems(board([
+          arrow('a', [(0, 0), (0, 1), (0, 2)]),
+          arrow('b', [(1, 2), (0, 2), (0, 3)]),
+        ])),
+        contains(contains('overlaps')),
+      );
+      expect(
+        LevelValidator.problems(board([
+          arrow('a', [(0, 0), (0, 2), (0, 3)]), // skips a cell
+        ])),
+        contains(contains('malformed')),
+      );
+      expect(
+        LevelValidator.problems(board(
+          [arrow('a', [(0, 0), (0, 1), (0, 2)])],
+          shape: {(0, 0), (0, 1)},
+        )),
+        contains(contains('leaves the silhouette')),
+      );
+    });
+
+    test('rejects a board whose arrows block each other in a cycle', () {
+      // a exits right into b's column; b exits left into a's row.
+      final level = board([
+        arrow('a', [(3, 0), (3, 1), (3, 2)]),
+        arrow('b', [(1, 4), (2, 4), (3, 4), (3, 3)]),
+        arrow('c', [(5, 3), (4, 3), (4, 2), (4, 1), (4, 0)]),
+      ]);
+      expect(LevelSolver.solve(level.arrows, 8).solvable, isFalse);
+      expect(LevelValidator.problems(level), contains('no escape order'));
+    });
+
+    test('rejects a picture the arrows leave mostly empty', () {
+      final shape = {for (var c = 0; c < 8; c++) for (var r = 0; r < 3; r++) (r, c)};
+      final level = board([
+        arrow('a', [(0, 0), (0, 1), (0, 2)]),
+      ], shape: shape);
+      expect(LevelValidator.problems(level), contains(contains('fill only')));
+    });
   });
 
   test('Restart regenerates the identical board', () {

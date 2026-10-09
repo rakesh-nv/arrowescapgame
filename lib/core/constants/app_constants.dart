@@ -4,7 +4,7 @@ class AppConstants {
 
   // Game
   /// Largest board size. Board size per level comes from DifficultyCurve.
-  static const int maxGridSize = 36;
+  static const int maxGridSize = 60;
   static const int startingCoins = 100;
   static const int startingHints = 3;
   static const int startingLives = 4;
@@ -25,7 +25,7 @@ class AppConstants {
   /// Bumped whenever generation changes the board a level produces. Saved
   /// in-progress games from another version are discarded, because their
   /// removed-arrow ids refer to a different board.
-  static const int levelGeneratorVersion = 5;
+  static const int levelGeneratorVersion = 7;
 
   // Solver
   static const int solverMaxIterations = 100000;

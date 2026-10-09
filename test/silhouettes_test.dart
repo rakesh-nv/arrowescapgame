@@ -85,6 +85,43 @@ void main() {
     }
   });
 
+  group('Pictures keep their details at every board size they may use', () {
+    // Ears, tails, legs, wings, wheels… each drawn part must still be on the
+    // board, and the board must match the picture overall, from the shape's
+    // smallest allowed board up to the largest.
+    for (final s in SilhouetteLibrary.all) {
+      test(s.id, () {
+        for (var g = s.minGrid; g <= AppConstants.maxGridSize; g++) {
+          for (final mirror in s.mirrorable ? [false, true] : [false]) {
+            final f = s.fidelity(g, mirror: mirror);
+            final reason = '${s.id} @$g mirror=$mirror';
+            expect(f.iou, greaterThanOrEqualTo(0.75), reason: reason);
+            expect(f.worstPart, greaterThanOrEqualTo(0.6),
+                reason: '$reason loses part ${f.worstPartIndex}');
+          }
+        }
+      });
+    }
+  });
+
+  test('fidelity flags a picture whose detail is lost', () {
+    // A body with a hair-thin antenna: at 16 cells the antenna cannot be
+    // drawn, at 40 it can.
+    const s = Silhouette(
+      id: 'probe',
+      name: 'Probe',
+      category: SilhouetteCategory.abstract,
+      minGrid: 16,
+      parts: [
+        SEllipse(0.5, 0.6, 0.3),
+        SLine(0.5, 0.3, 0.5, 0.02, 0.03),
+      ],
+    );
+    expect(s.fidelity(16).worstPart, lessThan(0.6));
+    expect(s.fidelity(16).worstPartIndex, 1);
+    expect(s.fidelity(40).iou, greaterThan(0.8));
+  });
+
   test('silhouettes are distinct pictures', () {
     final masks = {
       for (final s in SilhouetteLibrary.all) s.id: s.rasterize(24).cells,

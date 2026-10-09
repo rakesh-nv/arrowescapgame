@@ -16,8 +16,9 @@ class LevelModel {
   /// Name of the silhouette the arrows form ("Cat", "Bus"…), if any.
   final String? shapeName;
 
-  /// Cells of the silhouette (the picture outline the arrows fill). Drawn as
-  /// a subtle backdrop; empty when the level has no silhouette.
+  /// Cells of the silhouette (the picture the arrows fill). The view is
+  /// framed on it and grid dots outside it are dimmed; empty when the level
+  /// has no silhouette.
   final Set<(int, int)> shapeCells;
 
   const LevelModel({

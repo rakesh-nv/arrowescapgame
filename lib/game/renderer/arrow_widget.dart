@@ -98,6 +98,12 @@ class ArrowWidgetState extends State<ArrowWidget>
       cellSize: widget.cellSize,
       origin: widget.origin,
     );
+
+    // The board draws idle arrows in one shared layer and only gives an
+    // arrow its own widget once it becomes active, so the widget may be
+    // created already escaping or blocked.
+    if (widget.arrow.state == ArrowState.escaping) _playEscape();
+    if (widget.arrow.state == ArrowState.blocked) _playShake();
   }
 
   @override

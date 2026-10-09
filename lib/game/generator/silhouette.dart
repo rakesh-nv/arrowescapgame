@@ -182,6 +182,66 @@ class Silhouette {
     return SilhouetteMask(main, raw.length - main.length);
   }
 
+  /// How faithfully a [gridSize] board shows this picture, measured on 6×6
+  /// sample points per cell:
+  /// * `iou`: overlap of the vector picture and the playable cells
+  ///   (intersection over union, 1 = identical);
+  /// * `worstPart`: the smallest share of any drawn part (ear, wheel, tail,
+  ///   wing…) that lands on playable cells, over parts showing at least
+  ///   [minPartCells] cells of area; `worstPartIndex` names it in [parts].
+  ///
+  /// A low `worstPart` means a detail vanished or was cut off at this size.
+  ({double iou, double worstPart, int worstPartIndex}) fidelity(
+    int gridSize, {
+    bool mirror = false,
+    double minPartCells = 1.5,
+  }) {
+    const k = 6;
+    const pad = 0.5;
+    final span = gridSize - 2 * pad;
+    final mask = rasterize(gridSize, mirror: mirror).cells;
+    var both = 0, either = 0;
+    final visible = List.filled(parts.length, 0);
+    final kept = List.filled(parts.length, 0);
+    for (var r = 0; r < gridSize; r++) {
+      for (var c = 0; c < gridSize; c++) {
+        final inMask = mask.contains((r, c));
+        for (var sy = 0; sy < k; sy++) {
+          for (var sx = 0; sx < k; sx++) {
+            var x = (c + (sx + 0.5) / k - pad) / span;
+            final y = (r + (sy + 0.5) / k - pad) / span;
+            if (mirror) x = 1 - x;
+            final inShape = contains(x, y);
+            if (inShape && inMask) both++;
+            if (inShape || inMask) either++;
+            if (!inShape) continue;
+            for (var i = 0; i < parts.length; i++) {
+              final p = parts[i];
+              if (p is Cut || !p.contains(x, y)) continue;
+              visible[i]++;
+              if (inMask) kept[i]++;
+            }
+          }
+        }
+      }
+    }
+    var worst = 1.0;
+    var worstIndex = -1;
+    for (var i = 0; i < parts.length; i++) {
+      if (visible[i] < minPartCells * k * k) continue;
+      final share = kept[i] / visible[i];
+      if (share < worst) {
+        worst = share;
+        worstIndex = i;
+      }
+    }
+    return (
+      iou: either == 0 ? 0.0 : both / either,
+      worstPart: worst,
+      worstPartIndex: worstIndex,
+    );
+  }
+
   static Set<_Cell> _largestComponent(Set<_Cell> cells) {
     final seen = <_Cell>{};
     var best = <_Cell>{};

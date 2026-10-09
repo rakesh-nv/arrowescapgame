@@ -1,10 +1,12 @@
 import 'dart:math' show cos, max, min, pi, sin;
+import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
 import '../../data/models/theme_model.dart';
 import '../config/puzzle_config.dart';
+import 'arrow_painter.dart';
 import 'arrow_widget.dart';
 
 /// The main puzzle board widget.
@@ -43,8 +45,9 @@ class ArrowBoardWidget extends StatefulWidget {
     this.shapeCells = const {},
   });
 
-  /// Share of the available area the fitted board fills.
-  static const double fitFraction = 0.96;
+  /// Share of the available area the fitted picture fills (its own half-cell
+  /// margin keeps arrows off the edge).
+  static const double fitFraction = 0.985;
 
   /// How far the player can zoom out, as a fraction of the fitted size.
   static const double minZoomFraction = 0.5;
@@ -80,6 +83,21 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   /// Radius of the fingertip area sampled when resolving a tap.
   static const double _fingerRadius = 6;
 
+  /// Rounded routes of idle arrows, built once per arrow and cell size.
+  final Map<String, ArrowMotionPath> _paths = {};
+  double? _pathsCellSize;
+
+  ArrowMotionPath _pathFor(ArrowModel arrow, double cellSize) {
+    if (_pathsCellSize != cellSize) {
+      _paths.clear();
+      _pathsCellSize = cellSize;
+    }
+    return _paths.putIfAbsent(
+      arrow.id,
+      () => ArrowMotionPath.build(arrow: arrow, cellSize: cellSize),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -105,6 +123,7 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
         !identical(oldWidget.shapeCells, widget.shapeCells)) {
       _fitMatrix = null;
       _offFit = false;
+      _paths.clear();
     }
   }
 
@@ -244,23 +263,14 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
     _animateTo(_fitMatrix!);
   }
 
-  /// The playable arrow owning scene cell (row, col), if any.
-  String? _arrowAt(int row, int col) {
-    if (row < 0 ||
-        row >= widget.gridSize ||
-        col < 0 ||
-        col >= widget.gridSize) {
-      return null;
-    }
-    for (final arrow in widget.arrows) {
+  /// Which playable arrow owns each cell, built once per tap (one pass over
+  /// the arrows) so the fingertip samples are plain lookups.
+  Map<(int, int), String> _tapOwners() => {
+    for (final arrow in widget.arrows)
       if (arrow.state != ArrowState.removed &&
-          arrow.state != ArrowState.escaping &&
-          arrow.occupiedCells.contains((row, col))) {
-        return arrow.id;
-      }
-    }
-    return null;
-  }
+          arrow.state != ArrowState.escaping)
+        for (final cell in arrow.points) cell: arrow.id,
+  };
 
   /// Resolves a tap. The fingertip area is sampled: when at least 70% of it
   /// lies on one arrow, that arrow is tapped, whatever the zoom. When the
@@ -270,10 +280,11 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   void _handleTap(TapUpDetails details, double cellSize, double maxScale) {
     final p = details.localPosition;
     final scale = _tc.value.getMaxScaleOnAxis();
+    final owners = _tapOwners();
 
     String? ownerAt(Offset screen) {
       final s = _tc.toScene(screen);
-      return _arrowAt((s.dy / cellSize).floor(), (s.dx / cellSize).floor());
+      return owners[((s.dy / cellSize).floor(), (s.dx / cellSize).floor())];
     }
 
     // Centre-weighted samples of the fingertip: the centre counts twice.
@@ -331,6 +342,17 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
         // in to at least 2.5× the fit, or until a cell is ~110 px wide.
         final maxScale = max(_fitScale * 2.5, 110 / cellSize);
 
+        final idle = <ArrowModel>[];
+        final active = <ArrowModel>[];
+        for (final arrow in widget.arrows) {
+          if (arrow.state == ArrowState.removed) continue;
+          final animated =
+              arrow.state != ArrowState.normal ||
+              arrow.id == widget.hintedArrowId ||
+              arrow.id == widget.blockerArrowId;
+          (animated ? active : idle).add(arrow);
+        }
+
         return Stack(
           children: [
             Positioned.fill(
@@ -382,7 +404,26 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                                   ),
                                 ),
                               ),
-                              ...widget.arrows.map(
+                              // Every idle arrow in one layer: a board of
+                              // ~90 arrows is one picture, not 90 layers
+                              // with 270 animation controllers.
+                              Positioned.fill(
+                                child: RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: _IdleArrowsPainter(
+                                      arrows: idle,
+                                      cellSize: cellSize,
+                                      color: widget.theme.arrowColor,
+                                      glowColor: widget.theme.accentColor,
+                                      pathFor: (a) => _pathFor(a, cellSize),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Arrows that animate (escaping, blocked,
+                              // hinted, or the blocker just shown) get their
+                              // own widget and layer.
+                              ...active.map(
                                 (arrow) => ArrowWidget(
                                   key: ValueKey(arrow.id),
                                   arrow: arrow,
@@ -469,6 +510,51 @@ class _RecenterChip extends StatelessWidget {
   }
 }
 
+/// Paints every idle arrow (not animating, not highlighted) into one picture,
+/// with exactly the same drawing as [ArrowPainter]. Repaints only when the
+/// set of idle arrows changes, i.e. once per move.
+class _IdleArrowsPainter extends CustomPainter {
+  final List<ArrowModel> arrows;
+  final double cellSize;
+  final Color color;
+  final Color glowColor;
+  final ArrowMotionPath Function(ArrowModel) pathFor;
+
+  _IdleArrowsPainter({
+    required this.arrows,
+    required this.cellSize,
+    required this.color,
+    required this.glowColor,
+    required this.pathFor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final arrow in arrows) {
+      ArrowPainter(
+        arrow: arrow,
+        cellSize: cellSize,
+        bodyColor: color,
+        glowColor: glowColor,
+        motionPath: pathFor(arrow),
+      ).paint(canvas, size);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_IdleArrowsPainter old) {
+    if (old.cellSize != cellSize ||
+        old.color != color ||
+        old.arrows.length != arrows.length) {
+      return true;
+    }
+    for (var i = 0; i < arrows.length; i++) {
+      if (old.arrows[i].id != arrows[i].id) return true;
+    }
+    return false;
+  }
+}
+
 /// Paints the Rangoli / Kolam dot grid. When the level has a silhouette,
 /// dots inside the picture keep full strength and dots outside it are dimmed,
 /// so the shape stays readable without painting anything behind the arrows.
@@ -489,15 +575,6 @@ class _DotGridPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final hasShape = shapeCells.isNotEmpty;
 
-    final inside = Paint()
-      ..color = dotColor
-      ..isAntiAlias = true
-      ..style = PaintingStyle.fill;
-    final outside = Paint()
-      ..color = dotColor.withValues(alpha: dotColor.a * 0.4)
-      ..isAntiAlias = true
-      ..style = PaintingStyle.fill;
-
     // Dots stay narrower than the thin arrow stroke, so a dot under an arrow
     // is fully covered and never peeks out as a grey halo.
     final dotRadius = min(
@@ -505,16 +582,29 @@ class _DotGridPainter extends CustomPainter {
       PuzzleConfig.strokeWidthFor(cellSize) * 0.4,
     );
 
+    // Round points drawn in two batched calls (inside / outside the
+    // picture) instead of one circle per cell: 3,600 cells on a 60×60 board.
+    Paint dots(Color color) => Paint()
+      ..color = color
+      ..isAntiAlias = true
+      ..strokeWidth = dotRadius * 2
+      ..strokeCap = StrokeCap.round;
+    final inside = <Offset>[];
+    final outside = <Offset>[];
     for (var r = 0; r < gridSize; r++) {
       for (var c = 0; c < gridSize; c++) {
-        final cx = (c + 0.5) * cellSize;
-        final cy = (r + 0.5) * cellSize;
-        final paint = !hasShape || shapeCells.contains((r, c))
-            ? inside
-            : outside;
-        canvas.drawCircle(Offset(cx, cy), dotRadius, paint);
+        final centre = Offset((c + 0.5) * cellSize, (r + 0.5) * cellSize);
+        (!hasShape || shapeCells.contains((r, c)) ? inside : outside).add(
+          centre,
+        );
       }
     }
+    canvas.drawPoints(PointMode.points, inside, dots(dotColor));
+    canvas.drawPoints(
+      PointMode.points,
+      outside,
+      dots(dotColor.withValues(alpha: dotColor.a * 0.4)),
+    );
   }
 
   @override

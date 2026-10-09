@@ -10,6 +10,7 @@ import '../../data/models/level_model.dart';
 import '../config/difficulty_curve.dart';
 import '../solver/level_solver.dart';
 import 'dependency_analyzer.dart';
+import 'level_validator.dart';
 import 'shape_path_generator.dart';
 import 'silhouette.dart';
 
@@ -168,6 +169,22 @@ class LevelGenerator {
       }
 
       if (best != null) {
+        final level = _model(
+          levelNumber,
+          seed,
+          spec,
+          best,
+          shapeName: shape.name,
+          shapeCells: bestMask!,
+        );
+        // Final gate before a board can be shown (see LevelValidator).
+        final problems = LevelValidator.problems(level);
+        if (problems.isNotEmpty) {
+          if (kDebugMode) {
+            debugPrint('[LevelGen] L$levelNumber rejected: ${problems.first}');
+          }
+          continue;
+        }
         if (kDebugMode) {
           final m = DependencyAnalyzer.analyze(
             best,
@@ -184,14 +201,7 @@ class LevelGenerator {
             'blocked ${(1 - plan.initiallyFree / best.length).toStringAsFixed(2)}',
           );
         }
-        return _model(
-          levelNumber,
-          seed,
-          spec,
-          best,
-          shapeName: shape.name,
-          shapeCells: bestMask!,
-        );
+        return level;
       }
     }
 
@@ -420,7 +430,7 @@ class LevelGenerator {
     }
     final minRounds = max(2, spec.targetRounds.floor() - 1 - relax);
     if (plan.rounds < minRounds) return false;
-    if (relax == 0 && plan.rounds > spec.targetRounds + 5) return false;
+    if (relax == 0 && plan.rounds > spec.targetRounds * 1.3 + 0.5) return false;
     final blocked = 1 - plan.initiallyFree / arrowCount;
     if (blocked < spec.targetBlockedShare - 0.15 - 0.05 * relax) return false;
     return true;

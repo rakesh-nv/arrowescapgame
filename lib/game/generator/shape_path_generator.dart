@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../../data/models/arrow_direction.dart';
 import '../../data/models/arrow_model.dart';
@@ -39,7 +40,7 @@ class ShapePathGenerator {
     final averageTarget = averageLength ?? _averageFor(levelNumber);
 
     // 1. Build Distance Contour Field inside shapeMask
-    final contourMap = _buildContourMap(shapeMask, gridSize);
+    final contour = _buildContourMap(shapeMask, gridSize);
 
     final occupied = <Cell>{};
     final placedArrows = <ArrowModel>[];
@@ -69,7 +70,7 @@ class ShapePathGenerator {
 
       final arrow = _growContourSerpentineArrow(
         shapeMask: shapeMask,
-        contourMap: contourMap,
+        contour: contour,
         occupied: occupied,
         blockedExitRays: blockedExitRays,
         gridSize: gridSize,
@@ -114,7 +115,7 @@ class ShapePathGenerator {
 
       final arrow = _growContourSerpentineArrow(
         shapeMask: shapeMask,
-        contourMap: contourMap,
+        contour: contour,
         occupied: occupied,
         blockedExitRays: blockedExitRays,
         gridSize: gridSize,
@@ -164,6 +165,45 @@ class ShapePathGenerator {
     );
 
     if (placedArrows.isEmpty) return null;
+
+    // Pass 4: join short stubs (mostly gap fillers) end-to-end with a
+    // neighbour, so the board is made of long paths, not fragments.
+    _mergeShortFragments(
+      arrows: placedArrows,
+      gridSize: gridSize,
+      shortLen: max(4, (averageTarget * 0.5).floor()),
+      maxArrowLen: maxArrowLen,
+    );
+
+    // Pass 5: grow arrow ends into picture cells still left empty, then lay
+    // new arrows along pockets no end can reach (thin gaps beside the middle
+    // of other arrows), and tidy up once more, so the arrows draw the whole
+    // silhouette.
+    _absorbLeftovers(
+      arrows: placedArrows,
+      shapeMask: shapeMask,
+      gridSize: gridSize,
+      maxArrowLen: maxArrowLen,
+    );
+    if (_fillPockets(
+      arrows: placedArrows,
+      shapeMask: shapeMask,
+      gridSize: gridSize,
+      maxArrowLen: maxArrowLen,
+    )) {
+      _mergeShortFragments(
+        arrows: placedArrows,
+        gridSize: gridSize,
+        shortLen: max(4, (averageTarget * 0.5).floor()),
+        maxArrowLen: maxArrowLen,
+      );
+      _absorbLeftovers(
+        arrows: placedArrows,
+        shapeMask: shapeMask,
+        gridSize: gridSize,
+        maxArrowLen: maxArrowLen,
+      );
+    }
 
     // Reverse list so arrows[0] is first placed in forward time
     final forwardArrows = <ArrowModel>[];
@@ -269,8 +309,9 @@ class ShapePathGenerator {
     return 9.0 + (levelNumber / 100.0) * 2.5;
   }
 
-  /// Assigns each shape cell a contour distance from the outer boundary.
-  static Map<Cell, int> _buildContourMap(Set<Cell> shapeMask, int size) {
+  /// Assigns each shape cell a contour distance from the outer boundary, as a
+  /// flat `row * size + col` array (0 outside the shape).
+  static Int32List _buildContourMap(Set<Cell> shapeMask, int size) {
     final map = <Cell, int>{};
     final queue = <Cell>[];
 
@@ -304,13 +345,18 @@ class ShapePathGenerator {
       }
     }
 
-    return map;
+    final flat = Int32List(size * size);
+    map.forEach((cell, d) {
+      final (r, c) = cell;
+      if (r >= 0 && r < size && c >= 0 && c < size) flat[r * size + c] = d;
+    });
+    return flat;
   }
 
   /// Grows a single serpentine/boundary-following arrow path in reverse escape order.
   static ArrowModel? _growContourSerpentineArrow({
     required Set<Cell> shapeMask,
-    required Map<Cell, int> contourMap,
+    required Int32List contour,
     required Set<Cell> occupied,
     required Map<Cell, Set<int>> blockedExitRays,
     required int gridSize,
@@ -330,6 +376,17 @@ class ShapePathGenerator {
     for (final (r, c) in occupied) {
       if (r >= 0 && r < n && c >= 0 && c < n) free[r * n + c] = false;
     }
+    // Flat lookups for the hot loops below (record-keyed maps were the cost
+    // on 60×60 boards): contour depth, and how many earlier exit rays cross
+    // each cell.
+    final rayFreeByDir = [
+      for (final d in ArrowDirection.values) rayFree[d]!,
+    ];
+    final rayHits = Int32List(n * n);
+    blockedExitRays.forEach((cell, rays) {
+      final (r, c) = cell;
+      if (r >= 0 && r < n && c >= 0 && c < n) rayHits[r * n + c] = rays.length;
+    });
 
     // Only the 8 best-scoring heads matter (one of them is picked at random),
     // so keep a small sorted list instead of sorting every candidate.
@@ -341,7 +398,7 @@ class ShapePathGenerator {
       if (!free[r * n + c]) continue;
 
       for (final dir in ArrowDirection.values) {
-        if (!rayFree[dir]![r * n + c]) continue;
+        if (!rayFreeByDir[dir.index][r * n + c]) continue;
 
         final br = r - dir.dRow, bc = c - dir.dCol;
         if (br < 0 || br >= n || bc < 0 || bc >= n || !free[br * n + bc]) {
@@ -350,14 +407,13 @@ class ShapePathGenerator {
 
         var score = 10.0;
         // Reward heads on exit rays of previously placed arrows (creates blocking dependencies)
-        final rays = blockedExitRays[cell];
-        if (rays != null) {
-          score += 15.0 + rays.length * 5.0;
+        final rays = rayHits[r * n + c];
+        if (rays > 0) {
+          score += 15.0 + rays * 5.0;
         }
 
         // Contour preference: balance outer boundary & interior heads
-        final dist = contourMap[cell] ?? 0;
-        score += dist * 2.0;
+        score += contour[r * n + c] * 2.0;
         score += rng.nextDouble() * 4.0;
 
         if (top.length == topCount && score <= top.last.$3) continue;
@@ -389,8 +445,13 @@ class ShapePathGenerator {
       final neighbors = <(Cell, double)>[];
       for (final delta in const <Cell>[(-1, 0), (1, 0), (0, -1), (0, 1)]) {
         final next = (tail.$1 + delta.$1, tail.$2 + delta.$2);
-        if (!shapeMask.contains(next) ||
-            occupied.contains(next) ||
+        final (nr, nc) = next;
+        // `free` already excludes cells outside the picture or occupied.
+        if (nr < 0 ||
+            nr >= n ||
+            nc < 0 ||
+            nc >= n ||
+            !free[nr * n + nc] ||
             pathSet.contains(next)) {
           continue;
         }
@@ -408,14 +469,12 @@ class ShapePathGenerator {
         }
 
         // Reward following contour lines (same distance layer or adjacent)
-        final tailDist = contourMap[tail] ?? 0;
-        final nextDist = contourMap[next] ?? 0;
-        if (nextDist == tailDist) {
+        if (contour[nr * n + nc] == contour[tail.$1 * n + tail.$2]) {
           score += 3.0; // boundary-following parallel run
         }
 
         // Reward crossing blocked exit rays
-        if (blockedExitRays.containsKey(next)) {
+        if (rayHits[nr * n + nc] > 0) {
           score += 6.0;
         }
 
@@ -566,6 +625,235 @@ class ShapePathGenerator {
         }
       }
     }
+  }
+
+  /// Joins every arrow of at most [shortLen] cells with a neighbouring arrow
+  /// whose tail touches one end of it (the stub becomes the new tail part) or
+  /// whose head touches one end of it (the stub becomes the new head part). A
+  /// join is kept only if the board stays solvable with the same number of
+  /// planning waves (see [_waitDepth]): tidying the board never makes the
+  /// puzzle shallower, nor deeper than the curve asked for. No RNG.
+  static void _mergeShortFragments({
+    required List<ArrowModel> arrows,
+    required int gridSize,
+    required int shortLen,
+    required int maxArrowLen,
+  }) {
+    bool touches(Cell a, Cell b) =>
+        (a.$1 - b.$1).abs() + (a.$2 - b.$2).abs() == 1;
+
+    final depth = _waitDepth(arrows, gridSize);
+    if (depth == null) return;
+    var merged = true;
+    while (merged) {
+      merged = false;
+      for (var s = 0; s < arrows.length && !merged; s++) {
+        final stub = arrows[s];
+        if (stub.length > shortLen) continue;
+        // Candidate joins, shortest result first so no arrow balloons.
+        final options = <(int, List<Cell>)>[];
+        for (var t = 0; t < arrows.length; t++) {
+          if (t == s) continue;
+          final other = arrows[t];
+          final total = stub.length + other.length;
+          if (total > maxArrowLen) continue;
+          // A stub may be walked either way: once joined, its own direction
+          // no longer matters.
+          final reversed = stub.points.reversed.toList();
+          if (touches(stub.points.last, other.points.first)) {
+            options.add((t, [...stub.points, ...other.points]));
+          } else if (touches(stub.points.first, other.points.first)) {
+            options.add((t, [...reversed, ...other.points]));
+          }
+          if (touches(other.points.last, stub.points.first)) {
+            options.add((t, [...other.points, ...stub.points]));
+          } else if (touches(other.points.last, stub.points.last)) {
+            options.add((t, [...other.points, ...reversed]));
+          }
+        }
+        options.sort((a, b) => a.$2.length.compareTo(b.$2.length));
+        for (final (t, points) in options) {
+          final trial = [...arrows];
+          trial[t] = ArrowModel(id: arrows[t].id, points: points);
+          trial.removeAt(s);
+          if (_waitDepth(trial, gridSize) == depth) {
+            arrows
+              ..clear()
+              ..addAll(trial);
+            merged = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /// Extends arrow tails, then heads, into empty silhouette cells next to
+  /// them. Each extension is kept only if the board stays solvable with the
+  /// same number of planning waves (see [_waitDepth]); a new head cell also
+  /// sets the arrow's new exit direction, which that check covers.
+  /// Deterministic: no RNG.
+  static void _absorbLeftovers({
+    required List<ArrowModel> arrows,
+    required Set<Cell> shapeMask,
+    required int gridSize,
+    required int maxArrowLen,
+  }) {
+    final occupied = <Cell>{for (final a in arrows) ...a.points};
+    if (occupied.length >= shapeMask.length) return;
+    final depth = _waitDepth(arrows, gridSize);
+    if (depth == null) return;
+    const deltas = <Cell>[(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+    var grown = true;
+    while (grown && occupied.length < shapeMask.length) {
+      grown = false;
+      for (var i = 0; i < arrows.length; i++) {
+        final a = arrows[i];
+        if (a.length >= maxArrowLen) continue;
+        var extended = false;
+        for (final atTail in const [true, false]) {
+          final end = atTail ? a.points.first : a.points.last;
+          for (final d in deltas) {
+            final cell = (end.$1 + d.$1, end.$2 + d.$2);
+            if (!shapeMask.contains(cell) || occupied.contains(cell)) continue;
+            final trial = [...arrows];
+            trial[i] = ArrowModel(
+              id: a.id,
+              points: atTail ? [cell, ...a.points] : [...a.points, cell],
+            );
+            // Filling must not change how hard the board is: the planning
+            // depth stays exactly what the main pass built.
+            if (_waitDepth(trial, gridSize) != depth) continue;
+            arrows[i] = trial[i];
+            occupied.add(cell);
+            extended = true;
+            break;
+          }
+          // One cell per arrow per sweep keeps growth spread across arrows.
+          if (extended) break;
+        }
+        grown |= extended;
+      }
+    }
+  }
+
+  /// Lays a new arrow along each empty pocket of 3+ silhouette cells: a walk
+  /// from the pocket's most enclosed cell that keeps to the narrowest way on
+  /// (so it follows corridors), tried with its head at either end. A new
+  /// arrow is kept only if the board stays solvable with the same number of
+  /// planning waves. Returns whether any arrow was added. No RNG.
+  static bool _fillPockets({
+    required List<ArrowModel> arrows,
+    required Set<Cell> shapeMask,
+    required int gridSize,
+    required int maxArrowLen,
+  }) {
+    final occupied = <Cell>{for (final a in arrows) ...a.points};
+    final depth = _waitDepth(arrows, gridSize);
+    if (depth == null) return false;
+    const deltas = <Cell>[(-1, 0), (0, 1), (1, 0), (0, -1)];
+    Iterable<Cell> freeAround(Cell c, Set<Cell> taken) sync* {
+      for (final d in deltas) {
+        final n = (c.$1 + d.$1, c.$2 + d.$2);
+        if (shapeMask.contains(n) && !occupied.contains(n) && !taken.contains(n)) {
+          yield n;
+        }
+      }
+    }
+
+    final free = [
+      for (final c in shapeMask)
+        if (!occupied.contains(c)) c,
+    ]..sort((a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2 - b.$2);
+    var added = false;
+    // First sweep starts only at dead ends of pockets, the second anywhere
+    // (pockets without a dead end, such as a 2×2 block).
+    for (final (sweep, start) in [
+      for (final c in free) (0, c),
+      for (final c in free) (1, c),
+    ]) {
+      if (occupied.contains(start)) continue;
+      if (sweep == 0 && freeAround(start, const {}).length > 1) continue;
+      final path = <Cell>[start];
+      final taken = <Cell>{start};
+      while (path.length < maxArrowLen) {
+        final options = freeAround(path.last, taken).toList();
+        if (options.isEmpty) break;
+        options.sort((a, b) => freeAround(a, taken).length
+            .compareTo(freeAround(b, taken).length));
+        path.add(options.first);
+        taken.add(options.first);
+      }
+      if (path.length < 3) continue;
+      for (final points in [path, path.reversed.toList()]) {
+        final trial = [
+          ...arrows,
+          ArrowModel(id: 'pocket_${arrows.length}', points: points),
+        ];
+        if (_waitDepth(trial, gridSize) != depth) continue;
+        arrows.add(trial.last);
+        occupied.addAll(points);
+        added = true;
+        break;
+      }
+    }
+    return added;
+  }
+
+  /// Arrow i waits for j when j owns a cell in i's exit lane. Removing an
+  /// arrow never blocks another, so the board is solvable exactly when this
+  /// "waits for" graph has no cycle, and the longest waiting chain is the
+  /// number of planning waves (`LevelSolver.planningStats` rounds). Returns
+  /// that chain length, or null when some arrow waits for itself.
+  static int? _waitDepth(List<ArrowModel> arrows, int gridSize) {
+    // Flat arrays rather than maps: the tidy-up passes call this once per
+    // candidate change, so on 60×60 boards it must stay cheap.
+    final owner = Int32List(gridSize * gridSize)..fillRange(0, gridSize * gridSize, -1);
+    for (var i = 0; i < arrows.length; i++) {
+      for (final (r, c) in arrows[i].points) {
+        owner[r * gridSize + c] = i;
+      }
+    }
+    final waits = List.generate(arrows.length, (_) => <int>[]);
+    final seenBy = Int32List(arrows.length)..fillRange(0, arrows.length, -1);
+    for (var i = 0; i < arrows.length; i++) {
+      final points = arrows[i].points;
+      final (hr, hc) = points.last;
+      final (pr, pc) = points[points.length - 2];
+      final dr = hr - pr, dc = hc - pc;
+      var r = hr + dr;
+      var c = hc + dc;
+      while (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+        final j = owner[r * gridSize + c];
+        if (j >= 0 && j != i && seenBy[j] != i) {
+          seenBy[j] = i;
+          waits[i].add(j);
+        }
+        r += dr;
+        c += dc;
+      }
+    }
+    // 0 = unvisited, 1 = on the current path, 2 = done.
+    final state = List.filled(arrows.length, 0);
+    final chain = List.filled(arrows.length, 1);
+    bool cycleFrom(int i) {
+      state[i] = 1;
+      for (final j in waits[i]) {
+        if (state[j] == 1) return true;
+        if (state[j] == 0 && cycleFrom(j)) return true;
+        chain[i] = max(chain[i], chain[j] + 1);
+      }
+      state[i] = 2;
+      return false;
+    }
+
+    var longest = 0;
+    for (var i = 0; i < arrows.length; i++) {
+      if (state[i] == 0 && cycleFrom(i)) return null;
+      longest = max(longest, chain[i]);
+    }
+    return longest;
   }
 
   /// Fills any remaining isolated pockets of 3+ cells with valid escaping arrows.

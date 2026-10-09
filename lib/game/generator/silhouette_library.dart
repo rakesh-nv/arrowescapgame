@@ -35,7 +35,7 @@ class SilhouetteLibrary {
       id: 'dog',
       name: 'Dog',
       category: SilhouetteCategory.animal,
-      minGrid: 24,
+      minGrid: 27,
       parts: [
         SRect(0.20, 0.38, 0.74, 0.64, 0.10), // body
         SLine(0.68, 0.48, 0.78, 0.30, 0.16), // neck
@@ -101,7 +101,7 @@ class SilhouetteLibrary {
       id: 'bird',
       name: 'Bird',
       category: SilhouetteCategory.animal,
-      minGrid: 16,
+      minGrid: 24,
       parts: [
         SEllipse(0.48, 0.55, 0.30, 0.14, -8), // body
         SEllipse(0.79, 0.42, 0.12, 0.11), // head
@@ -197,10 +197,10 @@ class SilhouetteLibrary {
         SPoly([0.58, 0.24, 0.78, 0.04, 0.80, 0.36]),
         SRect(0.33, 0.92, 0.45, 0.99, 0.02), // feet
         SRect(0.55, 0.92, 0.67, 0.99, 0.02),
+        // Eyes are holes: pupils inside them would be islands no arrow can
+        // reach, so they are dropped from the board anyway.
         Cut(SEllipse(0.37, 0.38, 0.09)), // eyes
         Cut(SEllipse(0.63, 0.38, 0.09)),
-        SEllipse(0.37, 0.38, 0.035), // pupils
-        SEllipse(0.63, 0.38, 0.035),
         Cut(SPoly([0.46, 0.50, 0.54, 0.50, 0.50, 0.58])), // beak
       ],
     ),
@@ -208,11 +208,13 @@ class SilhouetteLibrary {
       id: 'snake',
       name: 'Snake',
       category: SilhouetteCategory.animal,
-      minGrid: 16,
+      minGrid: 24,
       parts: [
+        // The body ends mid-height, rising into the head, so the head stays
+        // attached at every board size.
         ...strokePath([
           for (var i = 0; i <= 24; i++)
-            (0.06 + 0.76 * i / 24, 0.56 + 0.26 * sin(2 * pi * 1.25 * i / 24)),
+            (0.06 + 0.76 * i / 24, 0.56 + 0.26 * cos(2 * pi * 1.25 * i / 24)),
         ], 0.15),
         const SEllipse(0.86, 0.50, 0.11, 0.09), // head
         const SLine(0.95, 0.52, 0.995, 0.60, 0.04), // tongue
@@ -523,9 +525,10 @@ class SilhouetteLibrary {
         SEllipse(0.24, 0.36, 0.09, 0.22, -28), // toes
         SEllipse(0.50, 0.26, 0.09, 0.24),
         SEllipse(0.76, 0.36, 0.09, 0.22, 28),
-        SPoly([0.10, 0.20, 0.10, 0.04, 0.20, 0.14]), // claws
-        SPoly([0.45, 0.06, 0.50, 0.00, 0.55, 0.06]),
-        SPoly([0.80, 0.14, 0.90, 0.04, 0.90, 0.20]),
+        // Claws wide enough to survive rasterizing, overlapping the toe tips.
+        SPoly([0.08, 0.24, 0.08, 0.02, 0.24, 0.16]), // claws
+        SPoly([0.42, 0.08, 0.50, 0.00, 0.58, 0.08]),
+        SPoly([0.76, 0.16, 0.92, 0.02, 0.92, 0.24]),
       ],
     ),
 

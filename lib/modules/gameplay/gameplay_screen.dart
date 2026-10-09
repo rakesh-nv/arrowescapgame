@@ -149,7 +149,10 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   void _showCompleteDialog() {
     if (!mounted) return;
-    showDialog(
+    // Every button closes the dialog with `true`. A null result means the
+    // system back button closed it, which would leave the finished, empty
+    // board on screen, so back leaves the level instead.
+    showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => LevelCompleteDialog(
@@ -159,7 +162,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         coinsEarned: _controller.lastCoinsEarned,
         isDailyChallenge: _controller.isDailyChallenge.value,
         onNextLevel: () {
-          Navigator.of(dialogContext).pop();
+          Navigator.of(dialogContext).pop(true);
           _dialogShown = false;
           if (_controller.isDailyChallenge.value) {
             // There is no "next" daily; return to the daily screen.
@@ -169,16 +172,21 @@ class _GameplayScreenState extends State<GameplayScreen>
           _controller.loadLevel(_controller.currentLevelNumber + 1);
         },
         onReplay: () {
-          Navigator.of(dialogContext).pop();
+          Navigator.of(dialogContext).pop(true);
           _dialogShown = false;
           _controller.onReset();
         },
         onHome: () {
-          Navigator.of(dialogContext).pop();
+          Navigator.of(dialogContext).pop(true);
           Get.offNamed('/home');
         },
       ),
-    );
+    ).then((handled) {
+      if (handled != true && mounted) {
+        // Back to where the level was opened from (level map, home, daily).
+        Navigator.of(context).maybePop();
+      }
+    });
   }
 
   void _showHintAdDialog() {
@@ -622,34 +630,32 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   Widget _buildBoard(ThemeModel theme) {
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-        child: Obx(() {
-          if (_controller.isLoadingLevel.value) {
-            return _LoadingBoard(theme: theme);
-          }
-          return ArrowBoardWidget(
-            key: ValueKey(
-              '${_controller.isDailyChallenge.value ? 'daily' : 'level'}_'
-              '${_controller.currentLevelNumber}',
-            ),
-            arrows: _controller.arrows.toList(),
-            gridSize: _controller.gridSize,
-            theme: theme,
-            hintedArrowId: _controller.hintedArrowId.value.isEmpty
-                ? null
-                : _controller.hintedArrowId.value,
-            blockerArrowId: _controller.blockerArrowId.value.isEmpty
-                ? null
-                : _controller.blockerArrowId.value,
-            newlyAvailableArrowIds: _controller.newlyAvailableArrowIds.toSet(),
-            hasEscapeInProgress: _controller.animatingArrowId.value.isNotEmpty,
-            isCompleting: _controller.isCompleting.value,
-            shapeCells: _controller.shapeCells,
-            onArrowTap: _controller.onArrowTap,
-          );
-        }),
-      ),
+      // Edge to edge: the picture already keeps a half-cell margin.
+      child: Obx(() {
+        if (_controller.isLoadingLevel.value) {
+          return _LoadingBoard(theme: theme);
+        }
+        return ArrowBoardWidget(
+          key: ValueKey(
+            '${_controller.isDailyChallenge.value ? 'daily' : 'level'}_'
+            '${_controller.currentLevelNumber}',
+          ),
+          arrows: _controller.arrows.toList(),
+          gridSize: _controller.gridSize,
+          theme: theme,
+          hintedArrowId: _controller.hintedArrowId.value.isEmpty
+              ? null
+              : _controller.hintedArrowId.value,
+          blockerArrowId: _controller.blockerArrowId.value.isEmpty
+              ? null
+              : _controller.blockerArrowId.value,
+          newlyAvailableArrowIds: _controller.newlyAvailableArrowIds.toSet(),
+          hasEscapeInProgress: _controller.animatingArrowId.value.isNotEmpty,
+          isCompleting: _controller.isCompleting.value,
+          shapeCells: _controller.shapeCells,
+          onArrowTap: _controller.onArrowTap,
+        );
+      }),
     );
   }
 

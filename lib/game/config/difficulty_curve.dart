@@ -170,9 +170,9 @@ class _Key {
 /// depth, planning rounds and the share of arrows that are traps at the
 /// start. The generator picks, among valid candidates, the board closest to
 /// these targets, so neighbouring levels do not swing wildly. The board size
-/// for a level follows its picture (see [gridFor]) and caps at 36×36; the
-/// view frames the picture and taps that land between thin arrows magnify
-/// the board instead of guessing.
+/// for a level follows its picture (see [gridFor]) and caps at
+/// [AppConstants.maxGridSize]; the view frames the picture and taps that land
+/// between thin arrows magnify the board instead of guessing.
 class DifficultyCurve {
   DifficultyCurve._();
 
@@ -180,23 +180,26 @@ class DifficultyCurve {
   // depth, minOcc, planning rounds, blocked-at-start share, arrow floor,
   // playable silhouette cells.
   //
-  // Level 1 already offers ~220 playable cells (about a 23×23 board for a
-  // cat): ~30 arrows averaging ~7 cells, the longest ~15, in 5–6 waves of
-  // dependencies. By level 200 a picture offers ~540 cells holding ~45
-  // arrows averaging ~11 cells (the longest ~25–40) in ~10 waves. Thin
-  // strokes (about a fifth of a cell) keep these dense boards readable.
-  // The nominal grid gates detailed silhouettes (bicycle, castle…) so new
-  // pictures keep joining through the campaign.
+  // Level 1 already offers ~380 playable cells (a 31×31 board for a cat):
+  // ~43 arrows averaging ~9 cells, the longest ~18, in 6–7 waves of
+  // dependencies. By level 200 a picture offers ~1,000–1,240 cells on boards
+  // up to 60×60, holding ~70–90 arrows averaging ~13 cells (the longest
+  // ~30–40) in ~12 waves. Short
+  // stubs are merged into their neighbours, so arrow count grows with the
+  // picture, not with fragments. Bends are floors that rise every keyframe
+  // (real boards wind more). Thin strokes (about a fifth of a cell) keep
+  // these dense boards readable. The nominal grid gates detailed
+  // silhouettes (bicycle, castle…) so new pictures keep joining.
   static const List<_Key> _keys = [
-    _Key(1, 22, 0.93, 7.0, 12, 20, 0.90, 4, 0.86, 5.0, 0.55, 24, 220),
-    _Key(15, 23, 0.93, 7.4, 13, 22, 1.00, 4, 0.86, 5.4, 0.57, 26, 245),
-    _Key(35, 24, 0.94, 8.0, 15, 26, 1.10, 5, 0.87, 6.0, 0.60, 28, 280),
-    _Key(60, 26, 0.94, 8.6, 17, 30, 1.20, 5, 0.87, 6.6, 0.62, 30, 320),
-    _Key(85, 27, 0.95, 9.2, 19, 34, 1.30, 5, 0.88, 7.2, 0.64, 32, 360),
-    _Key(110, 29, 0.95, 9.8, 21, 38, 1.40, 6, 0.88, 7.8, 0.66, 34, 400),
-    _Key(140, 31, 0.96, 10.6, 24, 44, 1.50, 6, 0.88, 8.6, 0.68, 36, 450),
-    _Key(170, 33, 0.96, 11.4, 26, 50, 1.60, 6, 0.88, 9.4, 0.70, 38, 500),
-    _Key(200, 34, 0.97, 12.0, 28, 56, 1.70, 6, 0.88, 10.0, 0.72, 40, 540),
+    _Key(1, 26, 0.94, 8.0, 14, 24, 3.4, 4, 0.88, 5.5, 0.56, 38, 380),
+    _Key(15, 28, 0.94, 8.6, 16, 28, 3.6, 5, 0.88, 6.0, 0.58, 42, 440),
+    _Key(35, 30, 0.95, 9.4, 18, 32, 3.9, 5, 0.89, 6.8, 0.60, 46, 520),
+    _Key(60, 33, 0.95, 10.2, 20, 38, 4.2, 6, 0.89, 7.6, 0.62, 52, 620),
+    _Key(85, 36, 0.96, 11.0, 22, 44, 4.5, 6, 0.90, 8.4, 0.64, 58, 720),
+    _Key(110, 40, 0.96, 11.8, 25, 50, 4.8, 7, 0.90, 9.2, 0.66, 64, 830),
+    _Key(140, 44, 0.96, 12.8, 28, 58, 5.1, 7, 0.90, 10.2, 0.68, 70, 960),
+    _Key(170, 48, 0.97, 13.8, 31, 64, 5.4, 8, 0.90, 11.2, 0.70, 76, 1100),
+    _Key(200, 52, 0.97, 14.6, 34, 70, 5.7, 8, 0.90, 12.0, 0.72, 82, 1240),
   ];
 
   static const List<(String, Difficulty)> _worldDefs = [
@@ -300,26 +303,43 @@ class DifficultyCurve {
   }) => [
     for (final s in SilhouetteLibrary.all)
       if (s.minGrid <= gridSize &&
-          areaShare(s) * AppConstants.maxGridSize * AppConstants.maxGridSize >=
-              targetCells * 0.75)
+          areaAt(s, AppConstants.maxGridSize) >= targetCells * 0.75)
         s,
   ];
 
   static final Map<String, double> _shareMemo = {};
+  static final Map<(String, int), int> _areaMemo = {};
 
   /// Share of a board the silhouette covers (measured on a 20×20 raster).
   static double areaShare(Silhouette s) =>
       _shareMemo.putIfAbsent(s.id, () => s.rasterize(20).cells.length / 400);
 
-  /// Board size for [s] at [spec]: big enough for the picture to offer about
-  /// `spec.targetCells` playable cells, so every level gives a similar amount
-  /// of puzzle whatever its shape. A compact picture (castle) therefore gets
-  /// a smaller board with bigger cells, a slim one (airplane) a larger board.
-  /// Never below 18×18, the shape's own minimum, or above the board cap.
+  /// Playable cells [s] actually offers on a [gridSize] board. Measured, not
+  /// estimated: thin pictures (spiral, bicycle) rasterize fatter on small
+  /// boards, so a share taken at one size misjudges another.
+  static int areaAt(Silhouette s, int gridSize) => _areaMemo.putIfAbsent(
+    (s.id, gridSize),
+    () => s.rasterize(gridSize).cells.length,
+  );
+
+  /// Board size for [s] at [spec]: the smallest board on which the picture
+  /// offers `spec.targetCells` playable cells, so every level gives a similar
+  /// amount of puzzle whatever its shape. A compact picture (castle) therefore
+  /// gets a smaller board with bigger cells, a slim one (airplane) a larger
+  /// board. Never below 18×18, the shape's own minimum, or above the cap.
   static int gridFor(PuzzleSpec spec, Silhouette s) {
     if (spec.targetCells <= 0) return spec.gridSize;
-    final ideal = sqrt(spec.targetCells / areaShare(s)).round();
-    return ideal.clamp(max(18, s.minGrid), AppConstants.maxGridSize);
+    final lo = max(18, s.minGrid);
+    const hi = AppConstants.maxGridSize;
+    // Start from the area-share estimate, then step to the exact size.
+    var g = sqrt(spec.targetCells / areaShare(s)).round().clamp(lo, hi);
+    while (g < hi && areaAt(s, g) < spec.targetCells) {
+      g++;
+    }
+    while (g > lo && areaAt(s, g - 1) >= spec.targetCells) {
+      g--;
+    }
+    return g;
   }
 
   /// How many recent levels a silhouette must sit out before it returns.

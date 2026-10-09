@@ -10,10 +10,11 @@ void main() {
       DifficultyCurve.forLevel(n),
   ];
 
-  test('starts on a large board and ends at the 36×36 maximum', () {
-    expect(specs.first.gridSize, 22);
-    expect(specs.first.targetCells, greaterThanOrEqualTo(200));
-    expect(specs.last.targetCells, greaterThan(specs.first.targetCells * 2));
+  test('starts on a large board and grows to the largest boards', () {
+    expect(specs.first.gridSize, 26);
+    expect(specs.first.targetCells, greaterThanOrEqualTo(350));
+    expect(specs.last.targetCells, greaterThan(specs.first.targetCells * 3));
+    expect(specs.last.targetCells, greaterThanOrEqualTo(1200));
     // Nominal size; each picture's own board is capped at maxGridSize.
     expect(specs.last.gridSize, greaterThan(specs.first.gridSize));
     expect(specs.last.gridSize, lessThanOrEqualTo(AppConstants.maxGridSize));
