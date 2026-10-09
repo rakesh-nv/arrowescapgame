@@ -1,3 +1,5 @@
+import 'dart:math' show max;
+
 import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/player_progress.dart';
@@ -33,6 +35,20 @@ class ProgressRepository extends GetxService {
     LevelSelectController.recordLevelCompletion(levelNumber);
 
     await _storage.saveProgress(p);
+  }
+
+  /// Makes sure the level after the furthest completed one is unlocked.
+  /// Builds with a shorter campaign capped unlocks at their last level, so a
+  /// player who finished it would otherwise find the new levels locked.
+  Future<void> normalizeUnlocks() async {
+    final p = progress;
+    final completed = p.levelStars.keys.where((l) => l >= 1);
+    if (completed.isEmpty) return;
+    final target = (completed.reduce(max) + 1).clamp(1, AppConstants.totalLevels);
+    if (target > p.highestUnlockedLevel) {
+      p.highestUnlockedLevel = target;
+      await _storage.saveProgress(p);
+    }
   }
 
   Future<void> updateCoinsAndHints({

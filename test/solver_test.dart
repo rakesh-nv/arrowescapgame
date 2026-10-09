@@ -87,5 +87,42 @@ void main() {
         expect(result.solution.length, equals(level.arrows.length));
       }
     });
+
+    test('Overlapping or out-of-bounds boards are rejected', () {
+      final a = ArrowModel(id: 'a', points: const [(0, 0), (0, 1)]);
+      final b = ArrowModel(id: 'b', points: const [(1, 1), (0, 1)]);
+      expect(LevelSolver.solve([a, b], 4).solvable, isFalse);
+
+      final outside = ArrowModel(id: 'o', points: const [(0, 3), (0, 4)]);
+      expect(LevelSolver.solve([outside], 4).solvable, isFalse);
+    });
+
+    test('The solution order replays under the game rule (canEscape)', () {
+      for (final n in [1, 40, 120]) {
+        final level = LevelRepository.getLevel(n);
+        final result = LevelSolver.solve(level.arrows, level.gridSize);
+        final remaining = [...level.arrows];
+        for (final id in result.solution) {
+          final arrow = remaining.firstWhere((a) => a.id == id);
+          expect(
+            LevelSolver.canEscape(arrow, remaining, level.gridSize),
+            isTrue,
+            reason: 'level $n: $id must be free when the solution removes it',
+          );
+          remaining.remove(arrow);
+        }
+        expect(remaining, isEmpty);
+      }
+    });
+
+    test('firstBlocker names the nearest arrow in the exit lane', () {
+      // Head at (2,0) pointing up; arrows at (1,0) and (0,0) both in the lane.
+      final up = ArrowModel(id: 'up', points: const [(3, 0), (2, 0)]);
+      final near = ArrowModel(id: 'near', points: const [(1, 0), (1, 1)]);
+      final far = ArrowModel(id: 'far', points: const [(0, 0), (0, 1)]);
+      expect(LevelSolver.firstBlocker(up, [up, near, far], 4), 'near');
+      expect(LevelSolver.firstBlocker(up, [up, far], 4), 'far');
+      expect(LevelSolver.firstBlocker(up, [up], 4), isNull);
+    });
   });
 }

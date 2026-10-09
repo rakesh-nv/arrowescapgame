@@ -26,13 +26,17 @@ class LevelMapBackground extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
+                // One soft tint per world, bottom (world 1) to top (world 8).
                 colors: [
-                  Color(0xFFF5F7FF), // World 1: Fresh Meadow / Sky
-                  Color(0xFFEFF6FF), // World 2: Ocean Breeze
-                  Color(0xFFFAF5FF), // World 3: Sunset Dusk
-                  Color(0xFFF1F5F9), // World 4: Celestial Realm
+                  Color(0xFFF5F7FF),
+                  Color(0xFFEFF6FF),
+                  Color(0xFFF0FDF4),
+                  Color(0xFFFFFBEB),
+                  Color(0xFFFFF7ED),
+                  Color(0xFFFAF5FF),
+                  Color(0xFFF5F3FF),
+                  Color(0xFFF1F5F9),
                 ],
-                stops: [0.0, 0.35, 0.7, 1.0],
               ),
             ),
           ),

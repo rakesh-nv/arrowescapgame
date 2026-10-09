@@ -108,7 +108,7 @@ class _SplashScreenState extends State<SplashScreen>
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A2340), Color(0xFF2563EB)],
+            colors: [AppColors.navyDark, AppColors.accentBlue],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -152,7 +152,7 @@ class _SplashScreenState extends State<SplashScreen>
                     style: TextStyle(
                       fontSize: 44,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF60A5FA),
+                      color: AppColors.accentBlueLight,
                       letterSpacing: 8,
                     ),
                   ),
@@ -238,7 +238,7 @@ class _SplashScreenState extends State<SplashScreen>
                         minHeight: 8,
                         backgroundColor: Colors.white.withOpacity(0.2),
                         valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFF60A5FA),
+                          AppColors.accentBlueLight,
                         ),
                       ),
                     ),
@@ -286,7 +286,7 @@ class _SplashArrowPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final headPaint = Paint()
-      ..color = const Color(0xFF60A5FA)
+      ..color = AppColors.accentBlueLight
       ..style = PaintingStyle.fill;
 
     final path = Path()

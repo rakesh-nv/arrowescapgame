@@ -50,17 +50,29 @@ class StorageService {
 
   // ── In-Progress Puzzle State ──────────────────────────────────────────────
 
-  /// Retrieves the saved in-progress puzzle state for [levelNumber] if one exists.
-  Map<String, dynamic>? getSavedGame(int levelNumber) {
-    if (_savedGameBox != null && _savedGameBox!.isOpen) {
-      final data = _savedGameBox!.get('level_$levelNumber');
-      if (data == null) return null;
-      return Map<String, dynamic>.from(data as Map);
+  static const String _genVersionKey = 'genVersion';
+
+  /// Reads a saved puzzle. A save made by another level-generator version
+  /// refers to a different board, so it is discarded instead of restored.
+  Map<String, dynamic>? _readSave(String key) {
+    final useBox = _savedGameBox != null && _savedGameBox!.isOpen;
+    final raw = useBox ? _savedGameBox!.get(key) : _inMemorySavedGames[key];
+    if (raw == null) return null;
+    final data = Map<String, dynamic>.from(raw as Map);
+    if (data[_genVersionKey] != AppConstants.levelGeneratorVersion) {
+      if (useBox) {
+        _savedGameBox!.delete(key);
+      } else {
+        _inMemorySavedGames.remove(key);
+      }
+      return null;
     }
-    final inMem = _inMemorySavedGames['level_$levelNumber'];
-    if (inMem == null) return null;
-    return Map<String, dynamic>.from(inMem as Map);
+    return data;
   }
+
+  /// Retrieves the saved in-progress puzzle state for [levelNumber] if one exists.
+  Map<String, dynamic>? getSavedGame(int levelNumber) =>
+      _readSave('level_$levelNumber');
 
   /// Saves the current in-progress puzzle state.
   Future<void> saveGame({
@@ -79,6 +91,7 @@ class StorageService {
       'lives': lives,
       'isDaily': isDaily,
       'savedAt': DateTime.now().millisecondsSinceEpoch,
+      _genVersionKey: AppConstants.levelGeneratorVersion,
     };
 
     if (_savedGameBox != null && _savedGameBox!.isOpen) {
@@ -113,14 +126,8 @@ class StorageService {
   static const String _dailyKeyPrefix = 'daily_';
 
   /// Retrieves the saved in-progress daily challenge for [dateKey] ('YYYY-MM-DD').
-  Map<String, dynamic>? getDailySavedGame(String dateKey) {
-    final key = '$_dailyKeyPrefix$dateKey';
-    final data = (_savedGameBox != null && _savedGameBox!.isOpen)
-        ? _savedGameBox!.get(key)
-        : _inMemorySavedGames[key];
-    if (data == null) return null;
-    return Map<String, dynamic>.from(data as Map);
-  }
+  Map<String, dynamic>? getDailySavedGame(String dateKey) =>
+      _readSave('$_dailyKeyPrefix$dateKey');
 
   /// Saves the in-progress daily challenge for [dateKey], replacing any saved
   /// daily from another date (that board can never be played again).
@@ -140,6 +147,7 @@ class StorageService {
       'lives': lives,
       'isDaily': true,
       'savedAt': DateTime.now().millisecondsSinceEpoch,
+      _genVersionKey: AppConstants.levelGeneratorVersion,
     };
 
     if (_savedGameBox != null && _savedGameBox!.isOpen) {

@@ -6,8 +6,14 @@ class AppColors {
 
   // --- Classic Theme (default) ---
   static const Color backgroundLight = Color(0xFFF5F7FF);
+  static const Color backgroundLight2 = Color(0xFFEEF2FF);
   static const Color surface = Color(0xFFFFFFFF);
+  static const Color surfaceMuted = Color(0xFFF1F5F9);
   static const Color cardBorder = Color(0xFFE8ECF4);
+
+  // Daily challenge mode accent (kept distinct from the blue campaign accent)
+  static const Color dailyPurple = Color(0xFF7C3AED);
+  static const Color dailyIndigo = Color(0xFF4F46E5);
 
   static const Color navyDark = Color(0xFF1A2340);
   static const Color navyMid = Color(0xFF243055);

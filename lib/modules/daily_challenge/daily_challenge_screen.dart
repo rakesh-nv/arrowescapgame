@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/design_tokens.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/primary_button.dart';
 import '../gameplay/gameplay_controller.dart';
 import 'daily_challenge_controller.dart';
@@ -13,164 +16,193 @@ class DailyChallengeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.put(DailyChallengeController());
     final now = DateTime.now();
-    final monthName = _monthName(now.month);
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: AppGradients.daily),
         child: SafeArea(
           child: Column(
             children: [
               // App bar
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
                 child: Row(
                   children: [
-                    GestureDetector(
+                    AppIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      tooltip: 'Back',
+                      onDark: true,
                       onTap: () => Get.back(),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 18),
-                      ),
                     ),
-                    const Expanded(
+                    Expanded(
                       child: Center(
                         child: Text(
                           AppStrings.dailyChallengeTitle,
-                          style: TextStyle(
+                          style: AppTextStyles.heading.copyWith(
                             color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 44),
+                    const SizedBox(width: kMinTouchTarget),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 20),
-
-              Text(
-                '$monthName ${now.day}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                '${now.year}',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.6),
-                  fontSize: 16,
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              Obx(() => _StreakCard(
-                    streak: controller.streak.value,
-                    isCompletedToday: controller.isCompletedToday.value,
-                  )),
-
-              const SizedBox(height: 24),
-
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.monetization_on_rounded,
-                        color: Colors.amber, size: 28),
-                    const SizedBox(width: 8),
-                    Text(
-                      '+${AppConstants.coinsDailyChallenge} coins reward',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxl,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            children: [
+                              const SizedBox(height: AppSpacing.lg),
+                              Text(
+                                '${_monthName(now.month)} ${now.day}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '${now.year}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xl),
+                              Obx(() => _StreakCard(
+                                    streak: controller.streak.value,
+                                    isCompletedToday:
+                                        controller.isCompletedToday.value,
+                                  )),
+                              const SizedBox(height: AppSpacing.lg),
+                              Obx(() => _InfoRow(
+                                    gridSize: controller.isChallengeLoading.value
+                                        ? null
+                                        : controller.challengeLevel?.gridSize,
+                                    completed:
+                                        controller.isCompletedToday.value,
+                                  )),
+                              const SizedBox(height: AppSpacing.md),
+                              Text(
+                                'One new puzzle every day, separate from your '
+                                'campaign progress.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.xl,
+                            ),
+                            child: Obx(() => _buildAction(controller)),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-
-              const Spacer(),
-
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                child: Obx(() {
-                  if (controller.isCompletedToday.value) {
-                    return Column(
-                      children: [
-                        const Icon(Icons.check_circle_rounded,
-                            color: Colors.greenAccent, size: 60),
-                        const SizedBox(height: 12),
-                        const Text(
-                          "Today's challenge complete!",
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    );
-                  }
-                  if (controller.isChallengeLoading.value) {
-                    return const PrimaryButton(
-                      label: 'Preparing challenge...',
-                      onTap: null,
-                      backgroundColor: Colors.white,
-                      textColor: Color(0xFF7C3AED),
-                      width: double.infinity,
-                      icon: Icons.hourglass_top_rounded,
-                    );
-                  }
-                  if (controller.challengeLoadError.value.isNotEmpty) {
-                    return PrimaryButton(
-                      label: 'Try Again',
-                      onTap: controller.retryChallengeLoad,
-                      backgroundColor: Colors.white,
-                      textColor: const Color(0xFF7C3AED),
-                      width: double.infinity,
-                      icon: Icons.refresh_rounded,
-                    );
-                  }
-                  return PrimaryButton(
-                    label: 'Start Challenge',
-                    onTap: () => _launchChallenge(controller),
-                    backgroundColor: Colors.white,
-                    textColor: const Color(0xFF7C3AED),
-                    width: double.infinity,
-                    icon: Icons.arrow_forward_rounded,
-                  );
-                }),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAction(DailyChallengeController controller) {
+    if (controller.isCompletedToday.value) {
+      return Column(
+        children: [
+          const Icon(Icons.check_circle_rounded,
+              color: Colors.greenAccent, size: 56),
+          const SizedBox(height: AppSpacing.md),
+          const Text(
+            "Today's challenge complete!",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Come back tomorrow to keep your streak going.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+            ),
+          ),
+          if (controller.challengeLevel != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            PrimaryButton(
+              label: 'Play Again',
+              subtitle: 'For fun — no extra rewards',
+              backgroundColor: Colors.white,
+              textColor: AppColors.dailyPurple,
+              width: double.infinity,
+              icon: Icons.replay_rounded,
+              onTap: () => _launchChallenge(controller),
+            ),
+          ],
+        ],
+      );
+    }
+    if (controller.isChallengeLoading.value) {
+      return const PrimaryButton(
+        label: 'Preparing challenge…',
+        onTap: null,
+        loading: true,
+        backgroundColor: Colors.white,
+        textColor: AppColors.dailyPurple,
+        width: double.infinity,
+      );
+    }
+    if (controller.challengeLoadError.value.isNotEmpty) {
+      return Column(
+        children: [
+          Text(
+            controller.challengeLoadError.value,
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          PrimaryButton(
+            label: 'Try Again',
+            onTap: controller.retryChallengeLoad,
+            backgroundColor: Colors.white,
+            textColor: AppColors.dailyPurple,
+            width: double.infinity,
+            icon: Icons.refresh_rounded,
+          ),
+        ],
+      );
+    }
+    return PrimaryButton(
+      label: 'Start Challenge',
+      onTap: () => _launchChallenge(controller),
+      backgroundColor: Colors.white,
+      textColor: AppColors.dailyPurple,
+      width: double.infinity,
+      icon: Icons.arrow_forward_rounded,
     );
   }
 
@@ -181,9 +213,7 @@ class DailyChallengeScreen extends StatelessWidget {
         ? Get.find<GameplayController>()
         : Get.put(GameplayController());
     gc.loadLevelModel(level, dailyDateKey: dc.todayKey);
-    ever(gc.isComplete, (bool done) {
-      if (done) dc.onChallengeComplete(gc.calculatedStars);
-    });
+    dc.watchCompletion(gc);
     Get.toNamed('/gameplay', arguments: level);
   }
 
@@ -197,6 +227,59 @@ class DailyChallengeScreen extends StatelessWidget {
   }
 }
 
+
+class _InfoRow extends StatelessWidget {
+  final int? gridSize;
+  final bool completed;
+
+  const _InfoRow({required this.gridSize, required this.completed});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(IconData icon, String text) => Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.amber, size: 20),
+              const SizedBox(width: 6),
+              Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        chip(
+          Icons.monetization_on_rounded,
+          completed
+              ? 'Reward collected'
+              : '+${AppConstants.coinsDailyChallenge} coins',
+        ),
+        if (gridSize != null)
+          chip(Icons.grid_4x4_rounded, '$gridSize×$gridSize board'),
+      ],
+    );
+  }
+}
+
 class _StreakCard extends StatelessWidget {
   final int streak;
   final bool isCompletedToday;
@@ -205,40 +288,42 @@ class _StreakCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 32),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('🔥', style: TextStyle(fontSize: 32)),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$streak ${AppStrings.days}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
+    return Semantics(
+      label: '$streak day streak',
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🔥', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$streak ${AppStrings.days}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-              Text(
-                AppStrings.streak,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 13,
+                Text(
+                  AppStrings.streak,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 13,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

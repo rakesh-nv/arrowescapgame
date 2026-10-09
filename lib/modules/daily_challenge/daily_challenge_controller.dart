@@ -6,6 +6,7 @@ import '../../data/repositories/level_repository.dart';
 import '../../data/repositories/progress_repository.dart';
 import '../../data/models/level_model.dart';
 import '../../services/economy_service.dart';
+import '../gameplay/gameplay_controller.dart';
 
 class DailyChallengeController extends GetxController {
   final ProgressRepository _progress = Get.find<ProgressRepository>();
@@ -49,6 +50,22 @@ class DailyChallengeController extends GetxController {
   }
 
   Future<void> retryChallengeLoad() => _loadChallenge();
+
+  Worker? _completionWorker;
+
+  /// Records today's completion when [gameplay] finishes the daily board.
+  void watchCompletion(GameplayController gameplay) {
+    _completionWorker?.dispose();
+    _completionWorker = ever(gameplay.isComplete, (bool done) {
+      if (done) onChallengeComplete(gameplay.calculatedStars);
+    });
+  }
+
+  @override
+  void onClose() {
+    _completionWorker?.dispose();
+    super.onClose();
+  }
 
   Future<void> onChallengeComplete(int stars) async {
     if (isCompletedToday.value) return;

@@ -4,53 +4,134 @@ import '../models/tap_result.dart';
 
 /// Determines whether a puzzle board is solvable.
 ///
-/// Uses depth-first search with memoization.
-/// State is identified by the set of remaining arrow IDs (sorted, joined).
+/// The escape rule only checks the lane in front of an arrow's head against
+/// the arrows still on the board, so removing an arrow can never block another.
+/// That makes a greedy solve exact: repeatedly removing every currently
+/// escapable arrow clears the board if and only if the board is solvable. No
+/// search or iteration cap is needed, even on the largest boards.
 class LevelSolver {
   LevelSolver._();
 
-  /// Solve the given board state.
+  /// Solve the given board.
   ///
   /// Returns [SolveResult] with solvable=true and a valid solution sequence,
-  /// or solvable=false if no solution exists.
+  /// or solvable=false if the board is invalid (bad path, out of bounds,
+  /// overlapping arrows) or some arrows can never escape.
   static SolveResult solve(List<ArrowModel> arrows, int gridSize) {
     if (arrows.isEmpty) {
       return const SolveResult(solvable: true, solution: []);
     }
 
-    final initialState = BoardState.fromArrows(arrows, gridSize);
-    final visited = <String>{};
-    final solution = <String>[];
-
-    final found = _dfs(initialState, visited, solution);
-    return SolveResult(solvable: found, solution: found ? List.from(solution) : []);
-  }
-
-  static bool _dfs(
-    BoardState state,
-    Set<String> visited,
-    List<String> solution,
-  ) {
-    if (state.isEmpty) return true;
-    if (visited.length > 3000) return false;
-
-    final hash = state.stateHash;
-    if (visited.contains(hash)) return false;
-    visited.add(hash);
-
-    final available = _getAvailableArrows(state);
-    if (available.isEmpty) return false;
-
-    for (final arrow in available) {
-      solution.add(arrow.id);
-      final nextState = state.withArrowRemoved(arrow.id);
-      if (_dfs(nextState, visited, solution)) {
-        return true;
+    final remaining = <String, ArrowModel>{};
+    final occupancy = <(int, int), String>{};
+    for (final arrow in arrows) {
+      if (!arrow.hasValidPath || !isWithinGrid(arrow, gridSize)) {
+        return SolveResult.unsolvable;
       }
-      solution.removeLast();
+      if (remaining.containsKey(arrow.id)) return SolveResult.unsolvable;
+      remaining[arrow.id] = arrow;
+      for (final cell in arrow.occupiedCells) {
+        if (occupancy.containsKey(cell)) return SolveResult.unsolvable;
+        occupancy[cell] = arrow.id;
+      }
     }
 
-    return false;
+    final solution = <String>[];
+    while (remaining.isNotEmpty) {
+      final free = [
+        for (final arrow in remaining.values)
+          if (_laneClear(arrow, occupancy, gridSize)) arrow,
+      ];
+      if (free.isEmpty) return SolveResult.unsolvable;
+      for (final arrow in free) {
+        remaining.remove(arrow.id);
+        for (final cell in arrow.occupiedCells) {
+          occupancy.remove(cell);
+        }
+        solution.add(arrow.id);
+      }
+    }
+    return SolveResult(solvable: true, solution: solution);
+  }
+
+  /// How much reasoning a board demands, measured with the same greedy peel as
+  /// [solve]. Returns null for an unsolvable board.
+  ///
+  /// - `rounds`: how many waves of "everything currently free" it takes to
+  ///   clear the board (the minimum number of planning steps).
+  /// - `initiallyFree`: arrows that can escape on the very first tap; every
+  ///   other arrow is a trap that costs a life if tapped too early.
+  static ({int rounds, int initiallyFree})? planningStats(
+    List<ArrowModel> arrows,
+    int gridSize,
+  ) {
+    final result = solve(arrows, gridSize);
+    if (!result.solvable) return null;
+    if (arrows.isEmpty) return (rounds: 0, initiallyFree: 0);
+
+    final remaining = <String, ArrowModel>{for (final a in arrows) a.id: a};
+    final occupancy = <(int, int), String>{
+      for (final a in arrows)
+        for (final cell in a.occupiedCells) cell: a.id,
+    };
+    var rounds = 0;
+    var initiallyFree = 0;
+    while (remaining.isNotEmpty) {
+      final free = [
+        for (final arrow in remaining.values)
+          if (_laneClear(arrow, occupancy, gridSize)) arrow,
+      ];
+      if (rounds == 0) initiallyFree = free.length;
+      rounds++;
+      for (final arrow in free) {
+        remaining.remove(arrow.id);
+        for (final cell in arrow.occupiedCells) {
+          occupancy.remove(cell);
+        }
+      }
+    }
+    return (rounds: rounds, initiallyFree: initiallyFree);
+  }
+
+  static bool _laneClear(
+    ArrowModel arrow,
+    Map<(int, int), String> occupancy,
+    int gridSize,
+  ) {
+    final dir = arrow.exitDirection;
+    var r = arrow.headRow + dir.dRow;
+    var c = arrow.headCol + dir.dCol;
+    while (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+      final owner = occupancy[(r, c)];
+      if (owner != null && owner != arrow.id) return false;
+      r += dir.dRow;
+      c += dir.dCol;
+    }
+    return true;
+  }
+
+  /// The id of the nearest arrow in [arrow]'s exit lane, or null if the lane
+  /// is clear. Used only for feedback; the escape rule is [canEscape].
+  static String? firstBlocker(
+    ArrowModel arrow,
+    List<ArrowModel> remaining,
+    int gridSize,
+  ) {
+    final owners = <(int, int), String>{
+      for (final other in remaining)
+        if (other.id != arrow.id)
+          for (final cell in other.occupiedCells) cell: other.id,
+    };
+    final dir = arrow.exitDirection;
+    var r = arrow.headRow + dir.dRow;
+    var c = arrow.headCol + dir.dCol;
+    while (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+      final owner = owners[(r, c)];
+      if (owner != null) return owner;
+      r += dir.dRow;
+      c += dir.dCol;
+    }
+    return null;
   }
 
   /// Returns all arrows that can currently escape from the board

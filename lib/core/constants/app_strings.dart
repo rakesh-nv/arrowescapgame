@@ -15,14 +15,19 @@ class AppStrings {
 
   // Level select
   static const String levelSelect = 'Levels';
-  static const String world1 = 'World 1';
-  static const String world1Sub = 'Easy';
-  static const String world2 = 'World 2';
-  static const String world2Sub = 'Normal';
-  static const String world3 = 'World 3';
-  static const String world3Sub = 'Hard';
-  static const String world4 = 'World 4';
-  static const String world4Sub = 'Expert';
+  static const String levelMap = 'Level Map';
+  static const String world = 'World';
+  static const String world1 = 'First Steps';
+  static const String world2 = 'Winding Paths';
+  static const String world3 = 'Crossroads';
+  static const String world4 = 'Labyrinth';
+  static const String world5 = 'Deep Knots';
+  static const String world6 = 'Grand Kolam';
+  static const String world7 = 'Master Weave';
+  static const String world8 = 'Arrow Legend';
+  static const String jumpToCurrent = 'Current level';
+  static const String levelsCleared = 'levels cleared';
+  static const String campaignComplete = 'Campaign complete!';
 
   // Gameplay
   static const String level = 'Level';
@@ -51,10 +56,15 @@ class AppStrings {
   static const String coins = 'coins';
 
   // Tutorial
-  static const String tutorialStep1 = 'Find an arrow with a clear path.';
-  static const String tutorialStep2 = 'Tap it to make it escape!';
-  static const String tutorialStep3 = 'Removing arrows opens new paths.';
-  static const String tutorialStep4 = 'Clear the entire board to win!';
+  static const String tutorialStep1 =
+      'Tap an arrow whose path to the edge is clear. It slides out.';
+  static const String tutorialStep2 =
+      'If another arrow is in the way, the tap is blocked and costs a heart.';
+  static const String tutorialStep3 =
+      'Each arrow you clear opens paths for others. Clear them all to win!';
+  static const String tutorialZoomTip =
+      'Pinch to zoom on bigger boards. Tap Fit to see it all.';
+  static const String howToPlay = 'How to Play';
   static const String skip = 'Skip';
   static const String next = 'Next';
   static const String gotIt = "Got it!";

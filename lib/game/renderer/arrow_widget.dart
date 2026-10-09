@@ -17,6 +17,10 @@ class ArrowWidget extends StatefulWidget {
   final int gridSize;
   final ThemeModel theme;
   final bool isHinted;
+
+  /// This arrow just blocked a tap; it pulses in the error colour.
+  final bool isBlocker;
+
   /// Top-left offset of the compact visual grid within the touch board.
   final Offset origin;
 
@@ -27,6 +31,7 @@ class ArrowWidget extends StatefulWidget {
     required this.gridSize,
     required this.theme,
     required this.isHinted,
+    this.isBlocker = false,
     this.origin = Offset.zero,
   });
 
@@ -53,31 +58,36 @@ class ArrowWidgetState extends State<ArrowWidget>
 
     _shakeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: AppConstants.blockedAnimDurationMs),
+      duration: const Duration(
+        milliseconds: AppConstants.blockedAnimDurationMs,
+      ),
     );
 
     _escapeController = AnimationController(
       vsync: this,
       duration: Duration(
-        milliseconds:
-            AppConstants.arrowFlightDurationForLength(widget.arrow.length),
+        milliseconds: AppConstants.arrowFlightDurationForLength(
+          widget.arrow.length,
+        ),
       ),
     );
 
+    // Runs only while the arrow is highlighted; an idle board does not tick.
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+    );
+    _syncGlow();
 
     // Subtle obstacle bump in exit direction
-    _shakeAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 3.5), weight: 4),
-      TweenSequenceItem(tween: Tween(begin: 3.5, end: -1.0), weight: 3),
-      TweenSequenceItem(tween: Tween(begin: -1.0, end: 0.0), weight: 3),
-    ]).animate(CurvedAnimation(
-      parent: _shakeController,
-      curve: Curves.easeOutQuad,
-    ));
+    _shakeAnim =
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.0, end: 3.5), weight: 4),
+          TweenSequenceItem(tween: Tween(begin: 3.5, end: -1.0), weight: 3),
+          TweenSequenceItem(tween: Tween(begin: -1.0, end: 0.0), weight: 3),
+        ]).animate(
+          CurvedAnimation(parent: _shakeController, curve: Curves.easeOutQuad),
+        );
 
     _glowAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
@@ -113,6 +123,11 @@ class ArrowWidgetState extends State<ArrowWidget>
       );
     }
 
+    if (oldWidget.isHinted != widget.isHinted ||
+        oldWidget.isBlocker != widget.isBlocker) {
+      _syncGlow();
+    }
+
     final newState = widget.arrow.state;
     final oldState = oldWidget.arrow.state;
 
@@ -126,6 +141,23 @@ class ArrowWidgetState extends State<ArrowWidget>
 
     if (newState == ArrowState.normal && !widget.isHinted) {
       _shakeController.reset();
+    }
+  }
+
+  bool get _highlighted =>
+      widget.isHinted ||
+      widget.isBlocker ||
+      widget.arrow.state == ArrowState.selected;
+
+  void _syncGlow() {
+    if (_highlighted) {
+      if (!_glowController.isAnimating) {
+        _glowController.repeat(reverse: true);
+      }
+    } else if (_glowController.isAnimating || _glowController.value != 0) {
+      _glowController
+        ..stop()
+        ..value = 0;
     }
   }
 
@@ -169,8 +201,10 @@ class ArrowWidgetState extends State<ArrowWidget>
     if (arrow.state == ArrowState.removed) return const SizedBox.shrink();
 
     final cs = widget.cellSize;
-    final color = _getArrowColor();
-    final showGlow = widget.isHinted || arrow.state == ArrowState.selected;
+    final color = widget.isBlocker && arrow.state == ArrowState.normal
+        ? Color.lerp(widget.theme.arrowColor, Colors.redAccent, 0.7)!
+        : _getArrowColor();
+    final showGlow = _highlighted;
     final dir = arrow.exitDirection;
 
     return AnimatedBuilder(
@@ -192,23 +226,30 @@ class ArrowWidgetState extends State<ArrowWidget>
             ? Curves.easeInQuad.transform(_escapeController.value)
             : null;
         final visualOpacity = escapeProgress == null
-            ? (showGlow ? _glowAnim.value : 1.0)
+            ? (widget.isBlocker
+                  ? 0.6 + 0.4 * _glowController.value
+                  : (showGlow ? _glowAnim.value : 1.0))
             : 1.0 - (escapeProgress - 0.75).clamp(0.0, 0.25) / 0.25 * 0.7;
 
+        // Own layer per arrow: an escaping or glowing arrow repaints alone
+        // instead of forcing every arrow on a large board to repaint.
         return Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: ArrowPainter(
-                arrow: arrow,
-                cellSize: cs,
-                bodyColor: color,
-                glowColor: widget.theme.accentColor,
-                showGlow: showGlow,
-                opacity: visualOpacity,
-                snakeProgress: escapeProgress,
-                trailProgress: escapeProgress,
-                shakeOffset: Offset(shakeX, shakeY),
-                motionPath: _motionPath,
+          child: RepaintBoundary(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: ArrowPainter(
+                  arrow: arrow,
+                  cellSize: cs,
+                  bodyColor: color,
+                  glowColor: widget.isBlocker
+                      ? Colors.redAccent
+                      : widget.theme.accentColor,
+                  showGlow: showGlow,
+                  opacity: visualOpacity,
+                  snakeProgress: escapeProgress,
+                  shakeOffset: Offset(shakeX, shakeY),
+                  motionPath: _motionPath,
+                ),
               ),
             ),
           ),

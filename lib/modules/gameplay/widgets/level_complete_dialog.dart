@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/theme/design_tokens.dart';
 import '../../ads/ads_module.dart';
 import '../../../services/economy_service.dart';
+import '../../../widgets/game_dialog.dart';
+import '../../../widgets/pressable_scale.dart';
 import '../../../widgets/primary_button.dart';
 import '../../../widgets/secondary_button.dart';
 
@@ -39,11 +42,18 @@ class LevelCompleteDialog extends StatefulWidget {
 }
 
 class _LevelCompleteDialogState extends State<LevelCompleteDialog>
-    with TickerProviderStateMixin {
-  late AnimationController _scaleController;
-  late AnimationController _starsController;
-  late Animation<double> _scaleAnim;
-  final List<Animation<double>> _starAnims = [];
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _starsController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  late final List<Animation<double>> _starAnims = [
+    for (var i = 0; i < 3; i++)
+      CurvedAnimation(
+        parent: _starsController,
+        curve: Interval(i * 0.25, 0.5 + i * 0.2, curve: Curves.elasticOut),
+      ),
+  ];
   bool _hasDoubledCoins = false;
   bool _isLoadingAd = false;
 
@@ -53,266 +63,191 @@ class _LevelCompleteDialogState extends State<LevelCompleteDialog>
   @override
   void initState() {
     super.initState();
-
-    _scaleController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _starsController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-
-    _scaleAnim = CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.elasticOut,
-    );
-
-    for (int i = 0; i < 3; i++) {
-      _starAnims.add(
-        Tween<double>(begin: 0, end: 1).animate(
-          CurvedAnimation(
-            parent: _starsController,
-            curve: Interval(i * 0.25, 0.5 + i * 0.2, curve: Curves.elasticOut),
-          ),
-        ),
-      );
-    }
-
-    _scaleController.forward().then((_) => _starsController.forward());
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _starsController.forward();
+    });
   }
 
   @override
   void dispose() {
-    _scaleController.dispose();
     _starsController.dispose();
     super.dispose();
   }
 
+  Future<void> _doubleCoins() async {
+    setState(() => _isLoadingAd = true);
+    final baseCoins = _baseCoins;
+    final adService = Get.find<IAdService>();
+    final economy = Get.find<EconomyService>();
+    final rewarded = await adService.showRewardedCoins();
+    if (mounted) {
+      setState(() {
+        _isLoadingAd = false;
+        if (rewarded) {
+          _hasDoubledCoins = true;
+          economy.addCoins(baseCoins);
+        }
+      });
+    }
+  }
+
+  String get _starMessage => switch (widget.stars) {
+        3 => 'Flawless — no mistakes!',
+        2 => 'Great job! Try again with no mistakes for 3 stars.',
+        _ => 'Cleared! Fewer mistakes earn more stars.',
+      };
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: ScaleTransition(
-        scale: _scaleAnim,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Medal icon
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    return GameDialog(
+      icon: const DialogIcon(
+        icon: Icons.emoji_events_rounded,
+        color: AppColors.coinGold,
+        gradient: AppGradients.gold,
+      ),
+      title: Text(
+        widget.isDailyChallenge ? 'Daily Complete!' : AppStrings.levelComplete,
+      ),
+      message: Text(
+        widget.isDailyChallenge
+            ? '${AppStrings.dailyChallengeTitle}  •  ${widget.moves} moves'
+            : 'Level ${widget.levelNumber}  •  ${widget.moves} moves',
+      ),
+      children: [
+        // Stars
+        AnimatedBuilder(
+          animation: _starsController,
+          builder: (_, _) => Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(3, (i) {
+              final filled = i < widget.stars;
+              return Transform.scale(
+                scale: _starAnims[i].value,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 4,
+                  ).copyWith(bottom: i == 1 ? 10 : 0),
+                  child: Icon(
+                    filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: filled ? AppColors.starGold : AppColors.starEmpty,
+                    size: i == 1 ? 54 : 44,
+                    semanticLabel: i == 0
+                        ? '${widget.stars} of 3 stars'
+                        : null,
                   ),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.coinGold.withOpacity(0.4),
-                      blurRadius: 16,
+                ),
+              );
+            }),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _starMessage,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.caption,
+        ),
+        const SizedBox(height: AppSpacing.md),
+
+        // Coins earned (none when replaying an already-completed daily)
+        if (_baseCoins > 0) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.coinGold.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.monetization_on_rounded,
+                    color: AppColors.coinGold, size: 20),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    _hasDoubledCoins
+                        ? '+${_baseCoins * 2} coins earned (2x Bonus!)'
+                        : '+$_baseCoins coins earned',
+                    style: const TextStyle(
+                      color: AppColors.coinGoldDark,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
                     ),
-                  ],
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                child: const Icon(Icons.emoji_events_rounded,
-                    color: Colors.white, size: 40),
-              ),
-
-              const SizedBox(height: 16),
-
-              Text(
-                AppStrings.levelComplete,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.navyDark,
-                ),
-              ),
-
-              Text(
-                widget.isDailyChallenge
-                    ? '${AppStrings.dailyChallengeTitle}  •  ${widget.moves} moves'
-                    : 'Level ${widget.levelNumber}  •  ${widget.moves} moves',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Stars
-              AnimatedBuilder(
-                animation: _starsController,
-                builder: (_, __) => Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (i) {
-                    final filled = i < widget.stars;
-                    final scale = _starAnims[i].value;
-                    return Transform.scale(
-                      scale: scale,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(
-                          filled
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          color: filled
-                              ? AppColors.starGold
-                              : AppColors.starEmpty,
-                          size: 44,
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Coins earned (none when replaying an already-completed daily)
-              if (_baseCoins > 0)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ],
+            ),
+          ),
+          if (!_hasDoubledCoins) ...[
+            const SizedBox(height: AppSpacing.sm),
+            PressableScale(
+              onTap: _isLoadingAd ? null : _doubleCoins,
+              semanticLabel: '2x Coins, watch ad',
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 44),
                 decoration: BoxDecoration(
-                  color: AppColors.coinGold.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  gradient: AppGradients.reward,
+                  borderRadius: BorderRadius.circular(AppRadii.sm),
                 ),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.monetization_on_rounded,
-                        color: AppColors.coinGold, size: 20),
-                    const SizedBox(width: 6),
+                    const Icon(Icons.movie_creation_rounded,
+                        color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
                     Flexible(
                       child: Text(
-                        _hasDoubledCoins
-                            ? '+${_baseCoins * 2} coins earned (2x Bonus!)'
-                            : '+$_baseCoins coins earned',
+                        _isLoadingAd ? 'Loading Ad...' : '2x Coins (Watch Ad)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: AppColors.coinGoldDark,
+                          color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
+          ],
+        ],
 
-              const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.lg),
 
-              // 2x Coins Rewarded Ad Button
-              if (!_hasDoubledCoins && _baseCoins > 0)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: GestureDetector(
-                    onTap: _isLoadingAd
-                        ? null
-                        : () async {
-                            setState(() {
-                              _isLoadingAd = true;
-                            });
-                            final baseCoins = _baseCoins;
-                            final adService = Get.find<IAdService>();
-                            final economy = Get.find<EconomyService>();
-                            final rewarded = await adService.showRewardedCoins();
-                            if (mounted) {
-                              setState(() {
-                                _isLoadingAd = false;
-                                if (rewarded) {
-                                  _hasDoubledCoins = true;
-                                  economy.addCoins(baseCoins);
-                                }
-                              });
-                            }
-                          },
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.coinGold.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.movie_creation_rounded,
-                              color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            _isLoadingAd ? 'Loading Ad...' : '2x Coins (Watch Ad)',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 12),
-
-              // Buttons
-              PrimaryButton(
-                label: widget.isDailyChallenge
-                    ? AppStrings.backToDaily
-                    : AppStrings.nextLevel,
-                onTap: widget.onNextLevel,
-                width: double.infinity,
-                icon: Icons.arrow_forward_rounded,
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: SecondaryButton(
-                      label: AppStrings.replay,
-                      onTap: widget.onReplay,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: SecondaryButton(
-                      label: AppStrings.home,
-                      onTap: widget.onHome,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        PrimaryButton(
+          label: widget.isDailyChallenge
+              ? AppStrings.backToDaily
+              : AppStrings.nextLevel,
+          onTap: widget.onNextLevel,
+          width: double.infinity,
+          icon: widget.isDailyChallenge
+              ? Icons.check_rounded
+              : Icons.arrow_forward_rounded,
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm + 2),
+        Row(
+          children: [
+            Expanded(
+              child: SecondaryButton(
+                label: AppStrings.replay,
+                icon: Icons.replay_rounded,
+                onTap: widget.onReplay,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm + 2),
+            Expanded(
+              child: SecondaryButton(
+                label: AppStrings.home,
+                icon: Icons.home_rounded,
+                onTap: widget.onHome,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -73,9 +73,8 @@ class PuzzleConfig {
     final usableWidth = max(240.0, screenWidth - boardPadding * 2);
     // Double the cell spacing (36px to 80px)
     final rawSpacing = ((usableWidth / cols) * 2.0).clamp(36.0, 80.0);
-    // Doubled solid arrow stroke and arrowhead proportions
-    final thickness = (rawSpacing * 0.36).clamp(10.0, 22.0);
-    final head = (thickness * 1.70).clamp(18.0, 36.0);
+    final thickness = strokeWidthFor(rawSpacing);
+    final head = headSizeFor(rawSpacing);
 
     return PuzzleConfig(
       gridRows: rows,
@@ -87,6 +86,19 @@ class PuzzleConfig {
       minimumClearance: 16.0,
     );
   }
+
+  /// Arrow body stroke for a cell of [cellSize] scene pixels. Thin (about a
+  /// fifth of a cell) so many long parallel paths stay clearly separated:
+  /// neighbouring bodies keep ~0.78 of a cell of clear board between them.
+  /// Shared by layout and [ArrowPainter] so the two never drift apart.
+  static double strokeWidthFor(double cellSize) =>
+      (cellSize * 0.22).clamp(6.0, 14.0);
+
+  /// Arrowhead length for a cell of [cellSize]: ~0.6 of a cell, about three
+  /// stroke widths, so the direction reads at a glance while the head (its
+  /// width is ~1.04× its length) still clears the neighbouring lane.
+  static double headSizeFor(double cellSize) =>
+      (cellSize * 0.6).clamp(18.0, 40.0);
 
   /// Calculates the exact screen coordinate for a dot at (row, col).
   (double x, double y) dotPosition(

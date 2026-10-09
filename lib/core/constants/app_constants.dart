@@ -3,7 +3,8 @@ class AppConstants {
   AppConstants._();
 
   // Game
-  static const int fixedGridSize = 20;
+  /// Largest board size. Board size per level comes from DifficultyCurve.
+  static const int maxGridSize = 36;
   static const int startingCoins = 100;
   static const int startingHints = 3;
   static const int startingLives = 4;
@@ -15,21 +16,16 @@ class AppConstants {
   static const int coinsHintCost = 10;
   static const int coinsUndoCost = 5;
 
-  static const int totalLevels = 100;
+  static const int totalLevels = 200;
   static const int levelsPerWorld = 25;
-
-  // Level difficulty ranges
-  static const int easyLevelsStart = 1;
-  static const int easyLevelsEnd = 20;
-  static const int normalLevelsStart = 21;
-  static const int normalLevelsEnd = 50;
-  static const int hardLevelsStart = 51;
-  static const int hardLevelsEnd = 80;
-  static const int expertLevelsStart = 81;
-  static const int expertLevelsEnd = 100;
 
   // Level seed formula: seed = levelNumber * 31337 + 42
   static int levelSeed(int levelNumber) => levelNumber * 31337 + 42;
+
+  /// Bumped whenever generation changes the board a level produces. Saved
+  /// in-progress games from another version are discarded, because their
+  /// removed-arrow ids refer to a different board.
+  static const int levelGeneratorVersion = 5;
 
   // Solver
   static const int solverMaxIterations = 100000;

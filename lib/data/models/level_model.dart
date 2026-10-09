@@ -13,6 +13,13 @@ class LevelModel {
   final int? timeTargetSeconds;
   final List<ArrowModel> arrows;
 
+  /// Name of the silhouette the arrows form ("Cat", "Bus"…), if any.
+  final String? shapeName;
+
+  /// Cells of the silhouette (the picture outline the arrows fill). Drawn as
+  /// a subtle backdrop; empty when the level has no silhouette.
+  final Set<(int, int)> shapeCells;
+
   const LevelModel({
     required this.levelNumber,
     required this.seed,
@@ -23,6 +30,8 @@ class LevelModel {
     this.moveTarget,
     this.timeTargetSeconds,
     required this.arrows,
+    this.shapeName,
+    this.shapeCells = const {},
   });
 
   /// Creates a deep copy with fresh arrow instances (so game state is isolated)
@@ -37,6 +46,8 @@ class LevelModel {
       moveTarget: moveTarget,
       timeTargetSeconds: timeTargetSeconds,
       arrows: arrows.map((a) => a.copyWith()).toList(),
+      shapeName: shapeName,
+      shapeCells: shapeCells,
     );
   }
 }

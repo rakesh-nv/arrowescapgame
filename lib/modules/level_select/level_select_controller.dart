@@ -25,6 +25,9 @@ class LevelSelectController extends GetxController {
   int get highestUnlocked => _progress.progress.highestUnlockedLevel;
   int get totalStars => totalStarsCount.value;
   int get totalLevels => AppConstants.totalLevels;
+  int get completedCount => _progress.progress.levelStars.keys
+      .where((l) => l >= 1 && l <= AppConstants.totalLevels)
+      .length;
 
   bool isUnlocked(int level) => level <= highestUnlocked;
   bool isCompleted(int level) => _progress.progress.isLevelCompleted(level);

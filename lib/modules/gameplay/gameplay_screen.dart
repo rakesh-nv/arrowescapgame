@@ -3,14 +3,21 @@ import 'package:get/get.dart';
 import 'package:confetti/confetti.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../data/models/arrow_state.dart';
+import '../../core/theme/design_tokens.dart';
 import '../../data/models/level_model.dart';
 import '../../data/models/theme_model.dart';
+import '../../game/config/difficulty_curve.dart';
 import '../../game/renderer/arrow_board_widget.dart';
 import '../../services/economy_service.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/coin_badge.dart';
 import '../../widgets/difficulty_badge.dart';
+import '../../widgets/game_dialog.dart';
 import '../../widgets/heart_display.dart';
+import '../../widgets/pressable_scale.dart';
+import '../../widgets/primary_button.dart';
+import '../../widgets/secondary_button.dart';
+import '../settings/settings_controller.dart';
 import 'gameplay_controller.dart';
 import 'widgets/game_over_dialog.dart';
 import 'widgets/hint_ad_dialog.dart';
@@ -31,8 +38,8 @@ class _GameplayScreenState extends State<GameplayScreen>
   late ConfettiController _confetti;
   bool _dialogShown = false;
   bool _gameOverShown = false;
-  bool _tutorialShown = false;
   late AnimationController _rewardController;
+  final List<Worker> _workers = [];
 
   @override
   void initState() {
@@ -61,24 +68,30 @@ class _GameplayScreenState extends State<GameplayScreen>
       _controller.loadLevel(1);
     }
 
-    // Listen for level completion
-    ever(_controller.isComplete, (bool done) {
-      if (done && !_dialogShown) {
-        _dialogShown = true;
-        _confetti.play();
-        Future.delayed(const Duration(milliseconds: 120), _showCompleteDialog);
-      }
-    });
-    ever(_controller.isCompleting, (bool active) {
-      if (active) _rewardController.forward(from: 0);
-    });
-    // Listen for game over (all lives lost)
-    ever(_controller.isGameOver, (bool over) {
-      if (over && !_gameOverShown) {
-        _gameOverShown = true;
-        Future.delayed(const Duration(milliseconds: 250), _showGameOverDialog);
-      }
-    });
+    _workers.addAll([
+      ever(_controller.isComplete, (bool done) {
+        if (done && !_dialogShown) {
+          _dialogShown = true;
+          _confetti.play();
+          Future.delayed(
+            const Duration(milliseconds: 120),
+            _showCompleteDialog,
+          );
+        }
+      }),
+      ever(_controller.isCompleting, (bool active) {
+        if (active) _rewardController.forward(from: 0);
+      }),
+      ever(_controller.isGameOver, (bool over) {
+        if (over && !_gameOverShown) {
+          _gameOverShown = true;
+          Future.delayed(
+            const Duration(milliseconds: 250),
+            _showGameOverDialog,
+          );
+        }
+      }),
+    ]);
   }
 
   @override
@@ -94,6 +107,9 @@ class _GameplayScreenState extends State<GameplayScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (final w in _workers) {
+      w.dispose();
+    }
     _controller.saveCurrentGame();
     _confetti.dispose();
     _rewardController.dispose();
@@ -103,7 +119,10 @@ class _GameplayScreenState extends State<GameplayScreen>
     super.dispose();
   }
 
+  // ── Dialogs ───────────────────────────────────────────────────────────────
+
   void _showGameOverDialog() {
+    if (!mounted) return;
     showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -129,6 +148,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   void _showCompleteDialog() {
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -165,9 +185,8 @@ class _GameplayScreenState extends State<GameplayScreen>
     showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (dialogContext) => HintAdDialog(
-        onWatchAd: () => _controller.watchAdForHint(),
-      ),
+      builder: (dialogContext) =>
+          HintAdDialog(onWatchAd: () => _controller.watchAdForHint()),
     ).then((useNow) {
       if (useNow == true) {
         _controller.onHint();
@@ -175,11 +194,199 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
+  Future<void> _confirmRestart() async {
+    if (_controller.moves.value == 0 && _controller.mistakes.value == 0) {
+      _controller.onReset();
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => GameDialog(
+        icon: const DialogIcon(
+          icon: Icons.refresh_rounded,
+          color: AppColors.accentBlue,
+        ),
+        title: const Text('Restart level?'),
+        message: const Text(
+          'The board resets to its start and your hearts refill.',
+        ),
+        children: [
+          PrimaryButton(
+            label: 'Restart',
+            icon: Icons.refresh_rounded,
+            width: double.infinity,
+            onTap: () => Navigator.of(ctx).pop(true),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            label: AppStrings.cancel,
+            textColor: AppColors.textSecondary,
+            borderColor: AppColors.cardBorder,
+            onTap: () => Navigator.of(ctx).pop(false),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) _controller.onReset();
+  }
+
+  void _openPauseMenu() {
+    _controller.saveCurrentGame();
+    final settings = Get.isRegistered<SettingsController>()
+        ? Get.find<SettingsController>()
+        : Get.put(SettingsController());
+    final isDaily = _controller.isDailyChallenge.value;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        void close() => Navigator.of(sheetContext).pop();
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.md,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppRadii.xl),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBorder,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const Text(AppStrings.pause, style: AppTextStyles.title),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(_titleText(), style: AppTextStyles.caption),
+                  const SizedBox(height: AppSpacing.lg),
+                  PrimaryButton(
+                    label: AppStrings.resume,
+                    icon: Icons.play_arrow_rounded,
+                    width: double.infinity,
+                    onTap: close,
+                  ),
+                  const SizedBox(height: AppSpacing.sm + 2),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SecondaryButton(
+                          label: 'Restart',
+                          icon: Icons.refresh_rounded,
+                          onTap: () {
+                            close();
+                            _confirmRestart();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm + 2),
+                      Expanded(
+                        child: SecondaryButton(
+                          label: AppStrings.howToPlay,
+                          icon: Icons.help_outline_rounded,
+                          onTap: () {
+                            close();
+                            _controller.showTutorial();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Obx(
+                    () => Column(
+                      children: [
+                        _PauseToggle(
+                          icon: Icons.volume_up_rounded,
+                          label: AppStrings.sound,
+                          value: settings.settings.value.soundOn,
+                          onChanged: (_) => settings.toggleSound(),
+                        ),
+                        _PauseToggle(
+                          icon: Icons.vibration_rounded,
+                          label: AppStrings.haptics,
+                          value: settings.settings.value.hapticsOn,
+                          onChanged: (_) => settings.toggleHaptics(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SecondaryButton(
+                          label: isDaily
+                              ? AppStrings.dailyChallenge
+                              : AppStrings.levelMap,
+                          icon: isDaily
+                              ? Icons.wb_sunny_rounded
+                              : Icons.map_rounded,
+                          textColor: AppColors.textSecondary,
+                          borderColor: AppColors.cardBorder,
+                          onTap: () {
+                            close();
+                            if (isDaily) {
+                              Get.back();
+                            } else {
+                              Get.offNamed('/level-select');
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm + 2),
+                      Expanded(
+                        child: SecondaryButton(
+                          label: AppStrings.home,
+                          icon: Icons.home_rounded,
+                          textColor: AppColors.textSecondary,
+                          borderColor: AppColors.cardBorder,
+                          onTap: () {
+                            close();
+                            Get.offNamed('/home');
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _titleText() {
+    if (_controller.isDailyChallenge.value) {
+      return AppStrings.dailyChallengeTitle;
+    }
+    final n = _controller.currentLevelNumber;
+    final world = DifficultyCurve.worldFor(n);
+    return 'World ${world.number} · ${world.name}';
+  }
+
+  // ── Layout ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Obx(() {
       final theme = _controller.theme;
-      return _buildScaffold(theme);
+      return PopScope(canPop: true, child: _buildScaffold(theme));
     });
   }
 
@@ -205,9 +412,9 @@ class _GameplayScreenState extends State<GameplayScreen>
               children: [
                 _buildTopBar(theme),
                 _buildHUD(theme),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.xs),
                 _buildBoard(theme),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.sm),
                 _buildBottomBar(theme),
                 const SizedBox(height: 8),
                 const BannerAdWidget(),
@@ -234,11 +441,15 @@ class _GameplayScreenState extends State<GameplayScreen>
           ),
 
           // A few light coins travel from the board toward the counter during
-          // the completion beat. This is intentionally compact and particle-free.
+          // the completion beat.
           IgnorePointer(
             child: AnimatedBuilder(
               animation: _rewardController,
               builder: (context, _) {
+                if (_rewardController.value == 0) {
+                  return const SizedBox.shrink();
+                }
+                final size = MediaQuery.sizeOf(context);
                 final t = Curves.easeInOutCubic.transform(
                   _rewardController.value,
                 );
@@ -248,11 +459,11 @@ class _GameplayScreenState extends State<GameplayScreen>
                     final progress = Curves.easeOutCubic.transform(stagger);
                     return Positioned(
                       left:
-                          MediaQuery.of(context).size.width *
-                          (0.48 - progress * (0.18 + index * 0.035)),
+                          size.width *
+                          (0.48 - progress * (0.30 + index * 0.035)),
                       top:
-                          MediaQuery.of(context).size.height *
-                          (0.53 - progress * (0.38 + index * 0.025)),
+                          size.height *
+                          (0.53 - progress * (0.40 + index * 0.025)),
                       child: Opacity(
                         opacity: (1 - progress * 0.35) * (stagger > 0 ? 1 : 0),
                         child: const Icon(
@@ -268,16 +479,10 @@ class _GameplayScreenState extends State<GameplayScreen>
             ),
           ),
 
-          // Tutorial overlay
-          if (!_tutorialShown &&
-              _controller.isTutorialLevel.value &&
+          // How-to-play overlay
+          if (_controller.isTutorialLevel.value &&
               !_controller.isComplete.value)
-            TutorialOverlay(
-              onDismiss: () {
-                setState(() => _tutorialShown = true);
-                _controller.markTutorialSeen();
-              },
-            ),
+            TutorialOverlay(onDismiss: _controller.dismissTutorial),
         ],
       ),
     );
@@ -285,37 +490,69 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   Widget _buildTopBar(ThemeModel theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Back button
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: _HudButton(
-              icon: Icons.arrow_back_ios_new_rounded,
-              theme: theme,
-            ),
+          AppIconButton(
+            icon: Icons.pause_rounded,
+            tooltip: AppStrings.pause,
+            onDark: theme.isDark,
+            onTap: _openPauseMenu,
           ),
-
-          // Level number
+          Expanded(
+            child: Obx(() {
+              final isDaily = _controller.isDailyChallenge.value;
+              final n = _controller.currentLevelNumber;
+              final grid = _controller.isLoadingLevel.value
+                  ? null
+                  : _controller.gridSize;
+              final shape = _controller.isLoadingLevel.value
+                  ? null
+                  : _controller.shapeName;
+              final sub = grid == null
+                  ? (isDaily ? '' : DifficultyCurve.worldFor(n).name)
+                  : '${shape ?? (isDaily ? 'Daily board' : DifficultyCurve.worldFor(n).name)}'
+                        '  ·  $grid×$grid';
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isDaily
+                        ? AppStrings.dailyChallengeTitle
+                        : '${AppStrings.level} $n',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.heading.copyWith(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: theme.textColor,
+                    ),
+                  ),
+                  if (sub.isNotEmpty)
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: theme.textColor.withValues(alpha: 0.6),
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ),
           Obx(
-            () => Text(
-              _controller.isDailyChallenge.value
-                  ? AppStrings.dailyChallengeTitle
-                  : '${AppStrings.level} ${_controller.currentLevelNumber}',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: theme.textColor,
-              ),
-            ),
-          ),
-
-          // Settings
-          GestureDetector(
-            onTap: () => Get.toNamed('/settings'),
-            child: _HudButton(icon: Icons.settings_rounded, theme: theme),
+            () => _controller.isLoadingLevel.value
+                ? const SizedBox(width: kMinTouchTarget)
+                : DifficultyBadge(
+                    difficulty: _controller.difficulty,
+                    onDark: theme.isDark,
+                  ),
           ),
         ],
       ),
@@ -325,22 +562,59 @@ class _GameplayScreenState extends State<GameplayScreen>
   Widget _buildHUD(ThemeModel theme) {
     final economy = Get.find<EconomyService>();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Coins
           Obx(() => CoinBadge(coins: economy.coins.value, fontSize: 14)),
-
-          // Difficulty badge
-          Obx(
-            () => _controller.arrows.isNotEmpty
-                ? DifficultyBadge(difficulty: _controller.difficulty)
-                : const SizedBox.shrink(),
+          const SizedBox(width: AppSpacing.md),
+          // Board progress: arrows cleared out of total.
+          Expanded(
+            child: Obx(() {
+              final total = _controller.totalArrows;
+              final cleared = _controller.clearedArrows;
+              final value = total == 0 ? 0.0 : cleared / total;
+              return Semantics(
+                label: '$cleared of $total arrows cleared',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(end: value),
+                        duration: AppDurations.base,
+                        builder: (_, v, _) => LinearProgressIndicator(
+                          value: v,
+                          minHeight: 6,
+                          backgroundColor: theme.textColor.withValues(
+                            alpha: 0.10,
+                          ),
+                          color: theme.accentColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      total == 0 ? ' ' : '$cleared / $total arrows',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.caption.copyWith(
+                        fontSize: 11,
+                        color: theme.textColor.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ),
-
-          // Hearts
-          Obx(() => HeartDisplay(lives: _controller.displayHearts)),
+          const SizedBox(width: AppSpacing.md),
+          Obx(
+            () => Semantics(
+              label: '${_controller.displayHearts} hearts left',
+              child: HeartDisplay(lives: _controller.displayHearts),
+            ),
+          ),
         ],
       ),
     );
@@ -349,23 +623,29 @@ class _GameplayScreenState extends State<GameplayScreen>
   Widget _buildBoard(ThemeModel theme) {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         child: Obx(() {
-          final visibleArrows = _controller.arrows
-              .where((a) => a.state != ArrowState.removed)
-              .toList();
-
+          if (_controller.isLoadingLevel.value) {
+            return _LoadingBoard(theme: theme);
+          }
           return ArrowBoardWidget(
-            key: ValueKey('level_${_controller.currentLevelNumber}'),
-            arrows: visibleArrows,
+            key: ValueKey(
+              '${_controller.isDailyChallenge.value ? 'daily' : 'level'}_'
+              '${_controller.currentLevelNumber}',
+            ),
+            arrows: _controller.arrows.toList(),
             gridSize: _controller.gridSize,
             theme: theme,
             hintedArrowId: _controller.hintedArrowId.value.isEmpty
                 ? null
                 : _controller.hintedArrowId.value,
+            blockerArrowId: _controller.blockerArrowId.value.isEmpty
+                ? null
+                : _controller.blockerArrowId.value,
             newlyAvailableArrowIds: _controller.newlyAvailableArrowIds.toSet(),
             hasEscapeInProgress: _controller.animatingArrowId.value.isNotEmpty,
             isCompleting: _controller.isCompleting.value,
+            shapeCells: _controller.shapeCells,
             onArrowTap: _controller.onArrowTap,
           );
         }),
@@ -374,68 +654,121 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   Widget _buildBottomBar(ThemeModel theme) {
+    final economy = Get.find<EconomyService>();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      // Equal slots: on narrow phones the controls shrink to fit rather than
+      // overflowing.
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Hint
-          Obx(() {
-            final economy = Get.find<EconomyService>();
-            final hasHints = economy.hints.value > 0;
-            return _BottomActionButton(
-              icon: hasHints
-                  ? Icons.lightbulb_rounded
-                  : Icons.smart_display_rounded,
-              label: hasHints ? 'Hint' : 'Free Hint',
-              badge: hasHints ? '${economy.hints.value}' : 'Ad',
-              color: Colors.amber,
-              theme: theme,
-              onTap: () {
-                if (hasHints) {
-                  _controller.onHint();
-                } else {
-                  _showHintAdDialog();
-                }
-              },
-            );
-          }),
+          for (final item in <Widget>[
+            // Hint
+            Obx(() {
+              final hasHints = economy.hints.value > 0;
+              return _BottomActionButton(
+                icon: hasHints
+                    ? Icons.lightbulb_rounded
+                    : Icons.smart_display_rounded,
+                label: hasHints ? AppStrings.hint : 'Free Hint',
+                badge: hasHints ? '${economy.hints.value}' : 'Ad',
+                color: AppColors.coinGold,
+                theme: theme,
+                enabled: !_controller.isLoadingLevel.value,
+                onTap: () {
+                  if (hasHints) {
+                    _controller.onHint();
+                  } else {
+                    _showHintAdDialog();
+                  }
+                },
+              );
+            }),
 
-          // Moves counter
-          Obx(
-            () => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${_controller.moves.value}',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: theme.textColor,
-                  ),
+            // Restart
+            Obx(
+              () => _BottomActionButton(
+                icon: Icons.refresh_rounded,
+                label: 'Restart',
+                color: theme.isDark ? Colors.white : AppColors.navyMid,
+                theme: theme,
+                enabled:
+                    !_controller.isLoadingLevel.value &&
+                    (_controller.moves.value > 0 ||
+                        _controller.mistakes.value > 0),
+                onTap: _confirmRestart,
+              ),
+            ),
+
+            // Moves counter
+            Obx(
+              () => Semantics(
+                label: '${_controller.moves.value} moves',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${_controller.moves.value}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: theme.textColor,
+                      ),
+                    ),
+                    Text(
+                      'moves',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.textColor.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'moves',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: theme.textColor.withOpacity(0.5),
-                  ),
-                ),
-              ],
+              ),
+            ),
+
+            // Undo
+            Obx(
+              () => _BottomActionButton(
+                icon: Icons.undo_rounded,
+                label: AppStrings.undo,
+                color: AppColors.accentBlue,
+                theme: theme,
+                enabled: _controller.clearedArrows > 0,
+                onTap: _controller.onUndo,
+              ),
+            ),
+          ])
+            Expanded(child: Center(child: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingBoard extends StatelessWidget {
+  final ThemeModel theme;
+
+  const _LoadingBoard({required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: theme.accentColor,
             ),
           ),
-
-          // Undo
-          Obx(
-            () => _BottomActionButton(
-              icon: Icons.undo_rounded,
-              label: 'Undo',
-              color: AppColors.accentBlue,
-              theme: theme,
-              enabled: _controller.arrows.any(
-                (a) => a.state == ArrowState.removed,
-              ),
-              onTap: _controller.onUndo,
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Preparing level…',
+            style: AppTextStyles.caption.copyWith(
+              color: theme.textColor.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -444,30 +777,32 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 }
 
-class _HudButton extends StatelessWidget {
+class _PauseToggle extends StatelessWidget {
   final IconData icon;
-  final ThemeModel theme;
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
 
-  const _HudButton({required this.icon, required this.theme});
+  const _PauseToggle({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: theme.isDark
-            ? Colors.white.withOpacity(0.1)
-            : Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8),
-        ],
-      ),
-      child: Icon(
-        icon,
-        color: theme.isDark ? Colors.white : AppColors.navyDark,
-        size: 20,
+    // Own transparent Material so the tile's ink is not hidden by the sheet's
+    // coloured background.
+    return Material(
+      type: MaterialType.transparency,
+      child: SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        secondary: Icon(icon, color: AppColors.navyMid),
+        title: Text(label, style: AppTextStyles.label),
+        value: value,
+        activeTrackColor: AppColors.accentBlue,
+        onChanged: onChanged,
       ),
     );
   }
@@ -494,22 +829,26 @@ class _BottomActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return PressableScale(
       onTap: enabled ? onTap : null,
-      child: Opacity(
+      pressedScale: 0.9,
+      semanticLabel: badge == null ? label : '$label, $badge',
+      child: AnimatedOpacity(
+        duration: AppDurations.fast,
         opacity: enabled ? 1.0 : 0.4,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 54,
+                  height: 54,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(theme.isDark ? 0.2 : 0.1),
+                    color: color.withValues(alpha: theme.isDark ? 0.2 : 0.1),
                     shape: BoxShape.circle,
-                    border: Border.all(color: color.withOpacity(0.3)),
+                    border: Border.all(color: color.withValues(alpha: 0.3)),
                   ),
                   child: Icon(icon, color: color, size: 26),
                 ),
@@ -518,8 +857,14 @@ class _BottomActionButton extends StatelessWidget {
                     right: -2,
                     top: -2,
                     child: Container(
-                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: color,
@@ -538,12 +883,16 @@ class _BottomActionButton extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.textColor.withOpacity(0.6),
-                fontWeight: FontWeight.w600,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.textColor.withValues(alpha: 0.65),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

@@ -27,13 +27,16 @@ class ShapePathGenerator {
     required int maxArrowLen,
     int minArrows = 4,
     required Random rng,
+    double? averageLength,
+    int maxTierLen = 22,
   }) {
     if (shapeMask.isEmpty) return null;
 
     final totalUsable = shapeMask.length;
     final targetOccupied = (totalUsable * targetDensity)
-        .clamp(20, totalUsable)
+        .clamp(min(20, totalUsable), totalUsable)
         .round();
+    final averageTarget = averageLength ?? _averageFor(levelNumber);
 
     // 1. Build Distance Contour Field inside shapeMask
     final contourMap = _buildContourMap(shapeMask, gridSize);
@@ -44,13 +47,13 @@ class ShapePathGenerator {
     final blockedExitRays = <Cell, Set<int>>{};
 
     // Fewer, substantial paths are the identity of the game. The count is
-    // derived from usable capacity so a 14×14 board is never asked to hold an
-    // impossible number of 23–45-cell arrows.
+    // derived from usable capacity so a small board is never asked to hold an
+    // impossible number of long arrows.
     final targetRequests = _buildTargetRequests(
-      levelNumber: levelNumber,
+      averageTarget: averageTarget,
       targetOccupied: targetOccupied,
       minArrows: minArrows,
-      maxArrowLen: maxArrowLen,
+      maxTierLen: maxTierLen,
       rng: rng,
     );
 
@@ -75,7 +78,7 @@ class ShapePathGenerator {
         rng: rng,
       );
 
-      if (arrow != null && arrow.length >= 2) {
+      if (arrow != null && arrow.length >= minArrowLen) {
         final idx = placedArrows.length;
         placedArrows.add(arrow);
         arrowCaps[idx] = _TierCap(tier, cap);
@@ -88,7 +91,7 @@ class ShapePathGenerator {
     var fillAttempts = 0;
     while ((occupied.length < targetOccupied ||
             placedArrows.length < minArrows) &&
-        fillAttempts < 100) {
+        fillAttempts < 30) {
       fillAttempts++;
       final roll = rng.nextDouble();
       LengthTier tier;
@@ -105,7 +108,7 @@ class ShapePathGenerator {
       } else {
         tier = LengthTier.short;
       }
-      final range = _rangeFor(tier, levelNumber, maxArrowLen);
+      final range = _rangeFor(tier, maxTierLen);
       targetLen = range.$1 + rng.nextInt(range.$2 - range.$1 + 1);
       cap = range.$2;
 
@@ -120,7 +123,7 @@ class ShapePathGenerator {
         rng: rng,
       );
 
-      if (arrow != null && arrow.length >= 2) {
+      if (arrow != null && arrow.length >= minArrowLen) {
         final idx = placedArrows.length;
         placedArrows.add(arrow);
         arrowCaps[idx] = _TierCap(tier, cap);
@@ -178,32 +181,27 @@ class ShapePathGenerator {
   }
 
   static List<(LengthTier, int, int)> _buildTargetRequests({
-    required int levelNumber,
+    required double averageTarget,
     required int targetOccupied,
     required int minArrows,
-    required int maxArrowLen,
+    required int maxTierLen,
     required Random rng,
   }) {
-    final averageTarget = _averageFor(levelNumber);
     var count = max(minArrows, (targetOccupied / averageTarget).round());
-    var tiers = _tiersFor(count, levelNumber);
+    var tiers = _tiersFor(count);
 
     while (count > minArrows &&
-        _minimumCells(tiers, levelNumber, maxArrowLen) > targetOccupied) {
+        _minimumCells(tiers, maxTierLen) > targetOccupied) {
       count--;
-      tiers = _tiersFor(count, levelNumber);
+      tiers = _tiersFor(count);
     }
 
     final requests = <(LengthTier, int, int)>[];
     var remainingCapacity = targetOccupied;
     for (var i = 0; i < tiers.length; i++) {
       final tier = tiers[i];
-      final range = _rangeFor(tier, levelNumber, maxArrowLen);
-      final reservedForFollowing = _minimumCells(
-        tiers.skip(i + 1),
-        levelNumber,
-        maxArrowLen,
-      );
+      final range = _rangeFor(tier, maxTierLen);
+      final reservedForFollowing = _minimumCells(tiers.skip(i + 1), maxTierLen);
       final permittedMaximum = min(
         range.$2,
         remainingCapacity - reservedForFollowing,
@@ -216,7 +214,7 @@ class ShapePathGenerator {
     return requests;
   }
 
-  static List<LengthTier> _tiersFor(int count, int levelNumber) {
+  static List<LengthTier> _tiersFor(int count) {
     if (count <= 6) {
       return [
         LengthTier.extraLong,
@@ -245,31 +243,27 @@ class ShapePathGenerator {
     ];
   }
 
-  static int _minimumCells(
-    Iterable<LengthTier> tiers,
-    int levelNumber,
-    int maxArrowLen,
-  ) => tiers.fold<int>(
-    0,
-    (sum, tier) => sum + _rangeFor(tier, levelNumber, maxArrowLen).$1,
-  );
+  static int _minimumCells(Iterable<LengthTier> tiers, int maxTierLen) =>
+      tiers.fold<int>(0, (sum, tier) => sum + _rangeFor(tier, maxTierLen).$1);
 
-  static (int, int) _rangeFor(
-    LengthTier tier,
-    int levelNumber,
-    int maxArrowLen,
-  ) {
-    // Sized to double the total number of arrows across all boards.
+  /// Length range (cells) for [tier]. The table is defined for the full-size
+  /// 22-cell top tier and scaled down for smaller boards (never below 3).
+  static (int, int) _rangeFor(LengthTier tier, int maxTierLen) {
     final base = switch (tier) {
       LengthTier.short     => (4, 7),
       LengthTier.medium    => (7, 10),
       LengthTier.long      => (10, 13),
       LengthTier.veryLong  => (13, 16),
-      LengthTier.extraLong => (16, min(22, maxArrowLen)),
+      LengthTier.extraLong => (16, 22),
     };
-    return base;
+    if (maxTierLen >= 22) return base;
+    final scale = maxTierLen / 22.0;
+    final lo = max(3, (base.$1 * scale).round());
+    final hi = max(lo, min(maxTierLen, (base.$2 * scale).round()));
+    return (lo, hi);
   }
 
+  /// Legacy average used when no explicit `averageLength` is given.
   static double _averageFor(int levelNumber) {
     // Average ~9.5 cells per arrow → doubles the total arrows produced.
     return 9.0 + (levelNumber / 100.0) * 2.5;
@@ -324,39 +318,60 @@ class ShapePathGenerator {
     required int arrowIndex,
     required Random rng,
   }) {
-    // 1. Find candidate head cells with unblocked exit rays
-    final candidateHeads = <(Cell, ArrowDirection, double)>[];
+    // 1. Find candidate head cells with unblocked exit rays. Ray freedom is
+    // precomputed for every cell and direction with four linear sweeps
+    // instead of walking each ray (the hot spot on large boards).
+    final n = gridSize;
+    final rayFree = _rayFreeTable(n, occupied);
+    final free = List<bool>.filled(n * n, false);
+    for (final (r, c) in shapeMask) {
+      if (r >= 0 && r < n && c >= 0 && c < n) free[r * n + c] = true;
+    }
+    for (final (r, c) in occupied) {
+      if (r >= 0 && r < n && c >= 0 && c < n) free[r * n + c] = false;
+    }
+
+    // Only the 8 best-scoring heads matter (one of them is picked at random),
+    // so keep a small sorted list instead of sorting every candidate.
+    const topCount = 8;
+    final top = <(Cell, ArrowDirection, double)>[];
 
     for (final cell in shapeMask) {
-      if (occupied.contains(cell)) continue;
+      final (r, c) = cell;
+      if (!free[r * n + c]) continue;
 
       for (final dir in ArrowDirection.values) {
-        if (!_isExitRayFree(cell, dir, gridSize, occupied)) continue;
+        if (!rayFree[dir]![r * n + c]) continue;
 
-        final backCell = (cell.$1 - dir.dRow, cell.$2 - dir.dCol);
-        if (!shapeMask.contains(backCell) || occupied.contains(backCell)) {
+        final br = r - dir.dRow, bc = c - dir.dCol;
+        if (br < 0 || br >= n || bc < 0 || bc >= n || !free[br * n + bc]) {
           continue;
         }
 
         var score = 10.0;
         // Reward heads on exit rays of previously placed arrows (creates blocking dependencies)
-        if (blockedExitRays.containsKey(cell)) {
-          score += 15.0 + blockedExitRays[cell]!.length * 5.0;
+        final rays = blockedExitRays[cell];
+        if (rays != null) {
+          score += 15.0 + rays.length * 5.0;
         }
 
         // Contour preference: balance outer boundary & interior heads
         final dist = contourMap[cell] ?? 0;
         score += dist * 2.0;
+        score += rng.nextDouble() * 4.0;
 
-        candidateHeads.add((cell, dir, score + rng.nextDouble() * 4.0));
+        if (top.length == topCount && score <= top.last.$3) continue;
+        var at = top.length;
+        while (at > 0 && top[at - 1].$3 < score) {
+          at--;
+        }
+        top.insert(at, (cell, dir, score));
+        if (top.length > topCount) top.removeLast();
       }
     }
 
-    if (candidateHeads.isEmpty) return null;
-    candidateHeads.sort((a, b) => b.$3.compareTo(a.$3));
-
-    final topCount = min(8, candidateHeads.length);
-    final chosen = candidateHeads[rng.nextInt(topCount)];
+    if (top.isEmpty) return null;
+    final chosen = top[rng.nextInt(top.length)];
     final head = chosen.$1;
     final dir = chosen.$2;
 
@@ -422,6 +437,53 @@ class ShapePathGenerator {
 
     if (path.length < 2) return null;
     return ArrowModel(id: 'tmp_$arrowIndex', points: path.reversed.toList());
+  }
+
+  /// For each direction, whether the straight ray from each cell (exclusive)
+  /// to the board edge is free of [occupied] cells. Same answer as
+  /// [_isExitRayFree], computed for the whole board in O(cells).
+  static Map<ArrowDirection, List<bool>> _rayFreeTable(
+    int n,
+    Set<Cell> occupied,
+  ) {
+    final occ = List<bool>.filled(n * n, false);
+    for (final (r, c) in occupied) {
+      if (r >= 0 && r < n && c >= 0 && c < n) occ[r * n + c] = true;
+    }
+    final up = List<bool>.filled(n * n, false);
+    final down = List<bool>.filled(n * n, false);
+    final left = List<bool>.filled(n * n, false);
+    final right = List<bool>.filled(n * n, false);
+    for (var c = 0; c < n; c++) {
+      var seen = false;
+      for (var r = 0; r < n; r++) {
+        up[r * n + c] = !seen;
+        if (occ[r * n + c]) seen = true;
+      }
+      seen = false;
+      for (var r = n - 1; r >= 0; r--) {
+        down[r * n + c] = !seen;
+        if (occ[r * n + c]) seen = true;
+      }
+    }
+    for (var r = 0; r < n; r++) {
+      var seen = false;
+      for (var c = 0; c < n; c++) {
+        left[r * n + c] = !seen;
+        if (occ[r * n + c]) seen = true;
+      }
+      seen = false;
+      for (var c = n - 1; c >= 0; c--) {
+        right[r * n + c] = !seen;
+        if (occ[r * n + c]) seen = true;
+      }
+    }
+    return {
+      ArrowDirection.up: up,
+      ArrowDirection.down: down,
+      ArrowDirection.left: left,
+      ArrowDirection.right: right,
+    };
   }
 
   static bool _isExitRayFree(
@@ -526,13 +588,17 @@ class ShapePathGenerator {
 
         final path = <Cell>[head];
         var curr = head;
-        // Prefer straight back from head, then turns
+        // The first step goes straight back from the head, so the arrow's exit
+        // direction (derived from its last segment) is the [dir] whose lane
+        // was checked above. Later steps may turn.
         for (var step = 0; step < 7; step++) {
-          final deltas = [
-            (-dir.dRow, -dir.dCol),
-            (dir.dCol, dir.dRow),
-            (-dir.dCol, -dir.dRow),
-          ]..shuffle(rng);
+          final deltas = step == 0
+              ? [(-dir.dRow, -dir.dCol)]
+              : ([
+                  (-dir.dRow, -dir.dCol),
+                  (dir.dCol, dir.dRow),
+                  (-dir.dCol, -dir.dRow),
+                ]..shuffle(rng));
 
           Cell? next;
           for (final d in deltas) {

@@ -6,15 +6,16 @@ import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
 import '../../game/generator/level_generator.dart';
 
-/// Provides access to all 100 game levels via deterministic generation.
+/// Provides access to every campaign level via deterministic generation.
 ///
 /// Each level is generated from a unique seed:
 ///   seed = levelNumber * 31337 + 42
+/// and its board size and difficulty come from DifficultyCurve.
 ///
 /// This guarantees:
 /// - Same level always produces the same board
 /// - No two levels share a seed
-/// - Levels can be added beyond 100 without any code changes
+/// - Levels can be added beyond the campaign without any code changes
 class LevelRepository {
   LevelRepository._();
 
@@ -25,16 +26,7 @@ class LevelRepository {
   static LevelModel getLevel(int n) {
     assert(n >= 1, 'Level number must be >= 1');
 
-    LevelModel level;
-    if (_cache.containsKey(n)) {
-      level = _cache[n]!;
-    } else {
-      final seed = AppConstants.levelSeed(n);
-      level =
-          LevelGenerator.generate(levelNumber: n, seed: seed) ??
-          _fallbackLevel(n, Difficulty.easy);
-      _cache[n] = level;
-    }
+    final level = _cache.putIfAbsent(n, () => _generate(n));
 
     _preloadNextLevels(n);
     return level;
@@ -53,11 +45,9 @@ class LevelRepository {
   /// adds them to the cache, so the UI isolate never blocks long enough to
   /// trigger an Android ANR.
   ///
-  /// Levels are generated in the same order, with the same seeds and the same
-  /// anti-duplicate history as the synchronous path, so the boards are
-  /// identical. With [requireFirst], [first] gets the same fallback as
-  /// [getLevel]; the others are cached only if generation succeeds, matching
-  /// the old preload.
+  /// Generation is a pure function of the level number, so boards made here
+  /// are identical to ones made by [getLevel]. Preloading stops at the end of
+  /// the campaign; with [requireFirst], [first] is prepared even beyond it.
   static Future<void> prepareLevels(
     int first, {
     int count = 1,
@@ -66,46 +56,42 @@ class LevelRepository {
     final numbers = [
       for (var n = first; n < first + count; n++)
         if (n >= 1 &&
-            n <= AppConstants.totalLevels &&
+            (n <= AppConstants.totalLevels || (requireFirst && n == first)) &&
             !_cache.containsKey(n) &&
             !_preparing.contains(n))
           n,
     ];
-    if (numbers.isEmpty) return;
+    if (numbers.isEmpty) {
+      // Another call may already be preparing it; wait for that to land.
+      if (requireFirst) {
+        while (_preparing.contains(first)) {
+          await Future<void>.delayed(const Duration(milliseconds: 16));
+        }
+      }
+      return;
+    }
 
-    final fallbackLevel = requireFirst && numbers.first == first ? first : null;
-    final signatures = LevelGenerator.recentSignatures;
     _preparing.addAll(numbers);
     try {
-      final (levels, newSignatures) = await Isolate.run(
-        () => _generateBatch(numbers, signatures, fallbackLevel),
-      );
-      LevelGenerator.restoreSignatures(newSignatures);
+      final levels = await Isolate.run(() => _generateBatch(numbers));
       levels.forEach((n, level) => _cache.putIfAbsent(n, () => level));
     } finally {
       _preparing.removeAll(numbers);
     }
   }
 
-  /// Runs on a background isolate, whose static generator state starts empty.
-  static (Map<int, LevelModel>, Map<int, LevelPatternSignature>)
-      _generateBatch(
-    List<int> numbers,
-    Map<int, LevelPatternSignature> signatures,
-    int? fallbackLevel,
-  ) {
-    LevelGenerator.restoreSignatures(signatures);
-    final levels = <int, LevelModel>{};
-    for (final n in numbers) {
-      final level =
-          LevelGenerator.generate(levelNumber: n, seed: AppConstants.levelSeed(n)) ??
-          (n == fallbackLevel ? _fallbackLevel(n, Difficulty.easy) : null);
-      if (level != null) levels[n] = level;
-    }
-    return (levels, LevelGenerator.recentSignatures);
+  /// Runs on a background isolate.
+  static Map<int, LevelModel> _generateBatch(List<int> numbers) => {
+        for (final n in numbers) n: _generate(n),
+      };
+
+  static LevelModel _generate(int n) {
+    final seed = AppConstants.levelSeed(n);
+    return LevelGenerator.generate(levelNumber: n, seed: seed) ??
+        LevelGenerator.guaranteedLevel(levelNumber: n, seed: seed);
   }
 
-  /// Pre-generate all 100 levels (useful for validation/testing)
+  /// Pre-generate every campaign level (useful for validation/testing)
   static List<LevelModel> generateAll() {
     return List.generate(AppConstants.totalLevels, (i) => getLevel(i + 1));
   }
@@ -116,37 +102,24 @@ class LevelRepository {
   /// Reads the cache without generating or preloading (useful for testing).
   static LevelModel? cachedLevel(int n) => _cache[n];
 
-  static LevelModel _fallbackLevel(int n, Difficulty difficulty) {
-    // Ultra-simple 3-arrow level as last-resort fallback
-    return LevelGenerator.generate(
-          levelNumber: n,
-          seed: n * 13,
-          difficulty: Difficulty.easy,
-        ) ??
-        LevelGenerator.generate(
-          levelNumber: n,
-          seed: 999,
-          difficulty: Difficulty.easy,
-        )!;
-  }
+  /// Daily challenges use a mid-campaign board size and difficulty.
+  static const Difficulty dailyDifficulty = Difficulty.normal;
 
   /// Generate a daily challenge level from a date seed
   static LevelModel getDailyChallenge(int dateSeed) {
-    if (_cache.containsKey(-dateSeed)) return _cache[-dateSeed]!;
-
-    final level =
-        LevelGenerator.generate(
-          levelNumber: 0,
-          seed: dateSeed,
-          difficulty: Difficulty.normal,
-        ) ??
-        LevelGenerator.generate(
-          levelNumber: 0,
-          seed: dateSeed + 1,
-          difficulty: Difficulty.easy,
-        )!;
-
-    _cache[-dateSeed] = level;
-    return level;
+    return _cache.putIfAbsent(
+      -dateSeed,
+      () =>
+          LevelGenerator.generate(
+            levelNumber: 0,
+            seed: dateSeed,
+            difficulty: dailyDifficulty,
+          ) ??
+          LevelGenerator.guaranteedLevel(
+            levelNumber: 0,
+            seed: dateSeed,
+            spec: LevelGenerator.specFor(0, dailyDifficulty),
+          ),
+    );
   }
 }

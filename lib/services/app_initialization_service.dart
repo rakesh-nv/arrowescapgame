@@ -175,6 +175,7 @@ class AppInitializationService {
     if (!Get.isRegistered<ProgressRepository>()) {
       Get.put<ProgressRepository>(progressRepo, permanent: true);
     }
+    await progressRepo.normalizeUnlocks();
 
     final economyService = EconomyService(storageService);
     if (!Get.isRegistered<EconomyService>()) {

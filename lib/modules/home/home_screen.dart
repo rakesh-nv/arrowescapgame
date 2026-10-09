@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/constants/app_strings.dart';
+import '../../core/theme/design_tokens.dart';
 import '../../data/models/arrow_direction.dart';
+import '../../game/config/difficulty_curve.dart';
 import '../../services/economy_service.dart';
-import '../../widgets/primary_button.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/coin_badge.dart';
+import '../../widgets/difficulty_badge.dart';
+import '../../widgets/primary_button.dart';
+import '../../widgets/secondary_button.dart';
+import '../../widgets/stat_pill.dart';
 import '../ads/ads_module.dart';
 import 'home_controller.dart';
 
@@ -18,160 +25,94 @@ class HomeScreen extends StatelessWidget {
     final controller = Get.put(HomeController());
     final economy = Get.find<EconomyService>();
 
+    void open(String route, {Object? arguments}) {
+      Get.toNamed(route, arguments: arguments)
+          ?.then((_) => controller.loadProgress());
+    }
+
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFF5F7FF), Color(0xFFEEF2FF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: AppGradients.background),
         child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                  ),
-                  child: IntrinsicHeight(
-                    child: Column(
-                      children: [
-                        // Top bar
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              GameIconButtonSmall(
-                                icon: Icons.settings_rounded,
-                                onTap: () => Get.toNamed('/settings')
-                                    ?.then((_) => controller.loadProgress()),
-                              ),
-                              Obx(() => CoinBadge(coins: economy.coins.value)),
-                              GameIconButtonSmall(
-                                icon: Icons.palette_rounded,
-                                onTap: () => Get.toNamed('/themes')
-                                    ?.then((_) => controller.loadProgress()),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Title
-                        const Text(
-                          'ARROW',
-                          style: TextStyle(
-                            fontSize: 44,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.navyDark,
-                            letterSpacing: 6,
-                            height: 1,
-                          ),
-                        ),
-                        ShaderMask(
-                          shaderCallback: (bounds) =>
-                              AppColors.primaryGradient.createShader(bounds),
-                          child: const Text(
-                            'ESCAPE',
-                            style: TextStyle(
-                              fontSize: 44,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 6,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          AppStrings.tagline,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        // Hero arrow illustration
-                        const _HeroIllustration(),
-                        const SizedBox(height: 24),
-                        // Continue card
-                        Obx(() {
-                          if (controller.hasProgress) {
-                            return Padding(
-                              padding: const EdgeInsets.only(
-                                left: 32,
-                                right: 32,
-                                bottom: 16,
-                              ),
-                              child: _ContinueCard(
-                                levelNumber: controller.currentLevel,
-                                onTap: () => Get.toNamed(
-                                  '/gameplay',
-                                  arguments: controller.currentLevel,
-                                )?.then((_) => controller.loadProgress()),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        }),
-
-                        // Play button
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: PrimaryButton(
-                            label: AppStrings.play,
-                            onTap: () => Get.toNamed('/level-select')
-                                ?.then((_) => controller.loadProgress()),
-                            width: double.infinity,
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Daily challenge
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: _DailyChallengeBanner(
-                            onTap: () => Get.toNamed('/daily-challenge')
-                                ?.then((_) => controller.loadProgress()),
-                          ),
-                        ),
-
-                        const Spacer(),
-
-                        // Bottom nav
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12, bottom: 8),
-                          child: Row(
+          child: Column(
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.page,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 480),
+                          child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              _BottomNavItem(
-                                icon: Icons.emoji_events_rounded,
-                                label: AppStrings.achievements,
-                                onTap: () {},
+                              const SizedBox(height: AppSpacing.md),
+                              _TopBar(
+                                controller: controller,
+                                economy: economy,
+                                onSettings: () => open('/settings'),
+                                onThemes: () => open('/themes'),
                               ),
+                              const SizedBox(height: AppSpacing.xl),
+                              const _Title(),
+                              const SizedBox(height: AppSpacing.lg),
+                              const _HeroIllustration(),
+                              const SizedBox(height: AppSpacing.xl),
+                              // Read the observables inside each Obx builder;
+                              // reads in a child's build() are not tracked.
+                              Obx(() => _ProgressCard(
+                                    world: controller.currentWorld,
+                                    done: controller.levelsCompleted.value,
+                                    stars: controller.totalStars.value,
+                                    maxStars: controller.maxStars,
+                                  )),
+                              const SizedBox(height: AppSpacing.lg),
+                              Obx(() => _PlayButton(
+                                    level: controller.currentLevel,
+                                    isResuming: controller.isResuming,
+                                    campaignComplete:
+                                        controller.campaignComplete,
+                                    hasProgress: controller.hasProgress,
+                                    onPlay: () => controller.campaignComplete &&
+                                            !controller.isResuming
+                                        ? open('/level-select')
+                                        : open(
+                                            '/gameplay',
+                                            arguments: controller.currentLevel,
+                                          ),
+                                  )),
+                              const SizedBox(height: AppSpacing.md),
+                              SecondaryButton(
+                                label: AppStrings.levelMap,
+                                icon: Icons.map_rounded,
+                                onTap: () => open('/level-select'),
+                              ),
+                              const SizedBox(height: AppSpacing.lg),
+                              Obx(() => _DailyCard(
+                                    done: controller.dailyDoneToday.value,
+                                    streak: controller.dailyStreak.value,
+                                    onTap: () => open('/daily-challenge'),
+                                  )),
+                              const SizedBox(height: AppSpacing.lg),
                             ],
                           ),
                         ),
-
-                        // Bottom Banner Ad
-                        const BannerAdWidget(),
-                        const SizedBox(height: 4),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              );
-            },
+              ),
+              // Bottom Banner Ad
+              const BannerAdWidget(),
+              const SizedBox(height: 4),
+            ],
           ),
         ),
       ),
@@ -179,83 +120,79 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _ContinueCard extends StatelessWidget {
-  final int levelNumber;
-  final VoidCallback onTap;
+class _TopBar extends StatelessWidget {
+  final HomeController controller;
+  final EconomyService economy;
+  final VoidCallback onSettings;
+  final VoidCallback onThemes;
 
-  const _ContinueCard({required this.levelNumber, required this.onTap});
+  const _TopBar({
+    required this.controller,
+    required this.economy,
+    required this.onSettings,
+    required this.onThemes,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(bottom: 0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 12,
-              offset: const Offset(0, 3),
-            ),
-          ],
+    return Row(
+      children: [
+        AppIconButton(
+          icon: Icons.settings_rounded,
+          tooltip: AppStrings.settings,
+          onTap: onSettings,
         ),
-        child: Row(
+        const Spacer(),
+        Obx(
+          () => StatPill(
+            icon: Icons.star_rounded,
+            value: '${controller.totalStars.value}',
+            color: AppColors.starGold,
+            semanticLabel: '${controller.totalStars.value} stars',
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Obx(() => CoinBadge(coins: economy.coins.value, fontSize: 14)),
+        const Spacer(),
+        AppIconButton(
+          icon: Icons.palette_rounded,
+          tooltip: AppStrings.themes,
+          onTap: onThemes,
+        ),
+      ],
+    );
+  }
+}
+
+class _Title extends StatelessWidget {
+  const _Title();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      header: true,
+      label: AppStrings.appName,
+      child: ExcludeSemantics(
+        child: Column(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.accentBlue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.play_circle_rounded,
-                color: AppColors.accentBlue,
-                size: 28,
+            const FittedBox(
+              child: Text('ARROW', style: AppTextStyles.display),
+            ),
+            ShaderMask(
+              shaderCallback: (bounds) =>
+                  AppGradients.primary.createShader(bounds),
+              child: FittedBox(
+                child: Text(
+                  'ESCAPE',
+                  style: AppTextStyles.display.copyWith(color: Colors.white),
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${AppStrings.continueLevel} ${AppStrings.level} $levelNumber',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: levelNumber / AppConstants.totalLevels,
-                      backgroundColor: AppColors.cardBorder,
-                      color: AppColors.accentBlue,
-                      minHeight: 5,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${levelNumber - 1} / ${AppConstants.totalLevels}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.textSecondary,
+            const SizedBox(height: AppSpacing.sm),
+            const Text(
+              AppStrings.tagline,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body,
             ),
           ],
         ),
@@ -264,74 +201,204 @@ class _ContinueCard extends StatelessWidget {
   }
 }
 
-class _DailyChallengeBanner extends StatelessWidget {
-  final VoidCallback onTap;
+class _ProgressCard extends StatelessWidget {
+  final CampaignWorld world;
+  final int done;
+  final int stars;
+  final int maxStars;
 
-  const _DailyChallengeBanner({required this.onTap});
+  const _ProgressCard({
+    required this.world,
+    required this.done,
+    required this.stars,
+    required this.maxStars,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF7C3AED), Color(0xFF6C63FF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF7C3AED).withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Daily Challenge',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+    final total = AppConstants.totalLevels;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${AppStrings.world} ${world.number} of '
+                      '${total ~/ AppConstants.levelsPerWorld}',
+                      style: AppTextStyles.caption,
                     ),
-                  ),
-                  Text(
-                    '+${AppConstants.coinsDailyChallenge} coins reward',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 12,
+                    const SizedBox(height: 2),
+                    Text(
+                      world.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.heading,
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Play',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+                  ],
                 ),
               ),
+              DifficultyBadge(difficulty: world.difficulty),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Semantics(
+            label: '$done of $total levels cleared',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: total == 0 ? 0 : done / total,
+                backgroundColor: AppColors.cardBorder,
+                color: difficultyColor(world.difficulty),
+                minHeight: 6,
+              ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$done / $total ${AppStrings.levelsCleared}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const Icon(Icons.star_rounded,
+                  size: 16, color: AppColors.starGold),
+              const SizedBox(width: 2),
+              Text(
+                '$stars / $maxStars',
+                style: AppTextStyles.caption,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayButton extends StatelessWidget {
+  final int level;
+  final bool isResuming;
+  final bool campaignComplete;
+  final bool hasProgress;
+  final VoidCallback onPlay;
+
+  const _PlayButton({
+    required this.level,
+    required this.isResuming,
+    required this.campaignComplete,
+    required this.hasProgress,
+    required this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final String label;
+    final String? subtitle;
+    if (isResuming) {
+      label = '${AppStrings.continueLevel} · ${AppStrings.level} $level';
+      subtitle = 'Pick up where you left off';
+    } else if (campaignComplete) {
+      label = AppStrings.campaignComplete;
+      subtitle = 'Replay any level for 3 stars';
+    } else if (hasProgress) {
+      label = '${AppStrings.play} · ${AppStrings.level} $level';
+      subtitle = null;
+    } else {
+      label = AppStrings.play;
+      subtitle = 'Start with ${AppStrings.level} 1';
+    }
+    return PrimaryButton(
+      label: label,
+      subtitle: subtitle,
+      icon: Icons.play_arrow_rounded,
+      width: double.infinity,
+      onTap: onPlay,
+    );
+  }
+}
+
+class _DailyCard extends StatelessWidget {
+  final bool done;
+  final int streak;
+  final VoidCallback onTap;
+
+  const _DailyCard({
+    required this.done,
+    required this.streak,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = done
+        ? 'Completed today${streak > 0 ? ' · $streak-day streak' : ''}'
+        : '+${AppConstants.coinsDailyChallenge} coins · a new puzzle every day';
+    return AppCard(
+      gradient: AppGradients.daily,
+      onTap: onTap,
+      semanticLabel: '${AppStrings.dailyChallenge}. $subtitle',
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg + 4,
+        vertical: AppSpacing.md + 2,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            done ? Icons.check_circle_rounded : Icons.wb_sunny_rounded,
+            color: done ? Colors.greenAccent : Colors.amber,
+            size: 28,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  AppStrings.dailyChallenge,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+            ),
+            child: Text(
+              done ? 'View' : AppStrings.play,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -346,18 +413,12 @@ class _HeroIllustration extends StatefulWidget {
 
 class _HeroIllustrationState extends State<_HeroIllustration>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _anim = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
-  }
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 2),
+  )..repeat(reverse: true);
+  late final Animation<double> _anim =
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
 
   @override
   void dispose() {
@@ -367,11 +428,15 @@ class _HeroIllustrationState extends State<_HeroIllustration>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) => CustomPaint(
-        size: const Size(200, 100),
-        painter: _HeroPainter(t: _anim.value),
+    return ExcludeSemantics(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _anim,
+          builder: (_, _) => CustomPaint(
+            size: const Size(200, 100),
+            painter: _HeroPainter(t: _anim.value),
+          ),
+        ),
       ),
     );
   }
@@ -390,7 +455,7 @@ class _HeroPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
-    // Snake 1: Main dark navy continuous snake path with two 90-degree turns
+    // Snake 1: main dark navy snake path with two 90-degree turns
     p.color = AppColors.navyDark;
     final x1 = 15.0 + t * 14;
     final path1 = Path()
@@ -399,17 +464,19 @@ class _HeroPainter extends CustomPainter {
       ..lineTo(x1 + 55, 30)
       ..lineTo(x1 + 115, 30);
     canvas.drawPath(path1, p);
-    _drawHead(canvas, Offset(x1 + 115, 30), AppColors.accentBlue, ArrowDirection.right);
+    _drawHead(canvas, Offset(x1 + 115, 30), AppColors.accentBlue,
+        ArrowDirection.right);
 
-    // Snake 2: Secondary continuous snake with 90-degree turn
-    p.color = AppColors.navyDark.withOpacity(0.55);
+    // Snake 2: secondary snake with a 90-degree turn
+    p.color = AppColors.navyDark.withValues(alpha: 0.55);
     final path2 = Path()
       ..moveTo(135, 15)
       ..lineTo(135, 55)
       ..lineTo(175, 55)
       ..lineTo(175, 85);
     canvas.drawPath(path2, p);
-    _drawHead(canvas, const Offset(175, 85), AppColors.accentPurple, ArrowDirection.down);
+    _drawHead(canvas, const Offset(175, 85), AppColors.accentPurple,
+        ArrowDirection.down);
   }
 
   void _drawHead(Canvas canvas, Offset tip, Color color, ArrowDirection dir) {
@@ -426,28 +493,24 @@ class _HeroPainter extends CustomPainter {
           ..lineTo(tip.dx - hs, tip.dy - hs * 0.55)
           ..lineTo(tip.dx - hs * 0.85, tip.dy)
           ..lineTo(tip.dx - hs, tip.dy + hs * 0.55);
-        break;
       case ArrowDirection.left:
         path
           ..moveTo(tip.dx, tip.dy)
           ..lineTo(tip.dx + hs, tip.dy - hs * 0.55)
           ..lineTo(tip.dx + hs * 0.85, tip.dy)
           ..lineTo(tip.dx + hs, tip.dy + hs * 0.55);
-        break;
       case ArrowDirection.down:
         path
           ..moveTo(tip.dx, tip.dy)
           ..lineTo(tip.dx - hs * 0.55, tip.dy - hs)
           ..lineTo(tip.dx, tip.dy - hs * 0.85)
           ..lineTo(tip.dx + hs * 0.55, tip.dy - hs);
-        break;
       case ArrowDirection.up:
         path
           ..moveTo(tip.dx, tip.dy)
           ..lineTo(tip.dx - hs * 0.55, tip.dy + hs)
           ..lineTo(tip.dx, tip.dy + hs * 0.85)
           ..lineTo(tip.dx + hs * 0.55, tip.dy + hs);
-        break;
     }
     path.close();
     canvas.drawPath(path, hp);
@@ -455,72 +518,4 @@ class _HeroPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_HeroPainter old) => old.t != t;
-}
-
-class GameIconButtonSmall extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const GameIconButtonSmall({
-    super.key,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.07),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Icon(icon, color: AppColors.navyDark, size: 22),
-      ),
-    );
-  }
-}
-
-class _BottomNavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _BottomNavItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppColors.textSecondary, size: 24),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

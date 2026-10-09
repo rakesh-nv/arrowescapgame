@@ -3,282 +3,144 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/design_tokens.dart';
+import '../../widgets/app_icon_button.dart';
+import '../../widgets/game_dialog.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/secondary_button.dart';
+import '../gameplay/widgets/tutorial_overlay.dart';
 import 'settings_controller.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  static const _privacyUrl =
+      'https://smooth-hyacinth-f03.notion.site/Privacy-Policy-for-Arrow-Escape-3d64cd92f5a880b18f15dcc5840c7380';
 
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(SettingsController());
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FF),
+      backgroundColor: AppColors.backgroundLight,
       body: SafeArea(
         child: Column(
           children: [
             // App bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
               child: Row(
                 children: [
-                  GestureDetector(
+                  AppIconButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    tooltip: 'Back',
                     onTap: () => Get.back(),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 18,
-                        color: AppColors.navyDark,
-                      ),
-                    ),
                   ),
                   const Expanded(
                     child: Center(
                       child: Text(
                         AppStrings.settings,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.navyDark,
-                        ),
+                        style: AppTextStyles.heading,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 44), // balance back button
+                  const SizedBox(width: kMinTouchTarget),
                 ],
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    _buildSectionHeader('AUDIO & HAPTICS'),
-                    const SizedBox(height: 10),
-                    _buildSettingsCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.page,
+                  vertical: AppSpacing.md,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Obx(
-                          () => _buildSwitchTile(
-                            icon: Icons.volume_up_rounded,
-                            iconColor: const Color(0xFF2563EB),
-                            title: AppStrings.sound,
-                            subtitle: 'Play sound effects during gameplay',
-                            value: controller.settings.value.soundOn,
-                            onChanged: (_) => controller.toggleSound(),
-                          ),
-                        ),
-                        const Divider(height: 1, indent: 56, endIndent: 16, color: Color(0xFFEEF2F6)),
-                        Obx(
-                          () => _buildSwitchTile(
-                            icon: Icons.music_note_rounded,
-                            iconColor: const Color(0xFF8B5CF6),
-                            title: AppStrings.music,
-                            subtitle: 'Background ambient music',
-                            value: controller.settings.value.musicOn,
-                            onChanged: (_) => controller.toggleMusic(),
-                          ),
-                        ),
-                        const Divider(height: 1, indent: 56, endIndent: 16, color: Color(0xFFEEF2F6)),
-                        Obx(
-                          () => _buildSwitchTile(
-                            icon: Icons.vibration_rounded,
-                            iconColor: const Color(0xFF06B6D4),
-                            title: AppStrings.haptics,
-                            subtitle: 'Vibrate on arrow tap and collisions',
-                            value: controller.settings.value.hapticsOn,
-                            onChanged: (_) => controller.toggleHaptics(),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader('PREFERENCES'),
-                    const SizedBox(height: 10),
-                    _buildSettingsCard(
-                      children: [
-                        Obx(
-                          () => _buildSwitchTile(
-                            icon: Icons.notifications_active_rounded,
-                            iconColor: const Color(0xFFF59E0B),
-                            title: AppStrings.notifications,
-                            subtitle: 'Daily puzzle reminders',
-                            value: controller.settings.value.notificationsOn,
-                            onChanged: (_) => controller.toggleNotifications(),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader('DATA'),
-                    const SizedBox(height: 10),
-                    _buildSettingsCard(
-                      children: [
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEF4444).withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.delete_forever_rounded,
-                              color: Color(0xFFEF4444),
-                              size: 22,
-                            ),
-                          ),
-                          title: const Text(
-                            AppStrings.resetProgress,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFEF4444),
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Reset all levels, stars and coins',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Color(0xFFEF4444),
-                          ),
-                          onTap: () => _showResetDialog(context, controller),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader('LEGAL'),
-                    const SizedBox(height: 10),
-                    _buildSettingsCard(
-                      children: [
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2563EB).withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.shield_rounded,
-                              color: Color(0xFF2563EB),
-                              size: 22,
-                            ),
-                          ),
-                          title: const Text(
-                            'Privacy Policy',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.navyDark,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'View our privacy policy',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.open_in_new_rounded,
-                            color: AppColors.textSecondary,
-                            size: 20,
-                          ),
-                          onTap: () async {
-                            final uri = Uri.parse(
-                              'https://smooth-hyacinth-f03.notion.site/Privacy-Policy-for-Arrow-Escape-3d64cd92f5a880b18f15dcc5840c7380',
-                            );
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    // App Info
-                    Center(
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF1A2340), Color(0xFF2563EB)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                        const _SectionHeader('AUDIO & HAPTICS'),
+                        _SettingsCard(
+                          children: [
+                            Obx(
+                              () => _SwitchTile(
+                                icon: Icons.volume_up_rounded,
+                                iconColor: AppColors.accentBlue,
+                                title: AppStrings.sound,
+                                subtitle: 'Play sound effects during gameplay',
+                                value: controller.settings.value.soundOn,
+                                onChanged: (_) => controller.toggleSound(),
                               ),
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF2563EB).withOpacity(0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
                             ),
-                            child: const Icon(
-                              Icons.navigation_rounded,
-                              color: Colors.white,
-                              size: 28,
+                            const _TileDivider(),
+                            Obx(
+                              () => _SwitchTile(
+                                icon: Icons.vibration_rounded,
+                                iconColor: const Color(0xFF06B6D4),
+                                title: AppStrings.haptics,
+                                subtitle: 'Vibrate on moves, blocked taps and wins',
+                                value: controller.settings.value.hapticsOn,
+                                onChanged: (_) => controller.toggleHaptics(),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            AppStrings.appName,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.navyDark,
+                          ],
+                        ),
+                        const _SectionHeader('HELP'),
+                        _SettingsCard(
+                          children: [
+                            _ActionTile(
+                              icon: Icons.help_outline_rounded,
+                              color: AppColors.accentPurple,
+                              title: AppStrings.howToPlay,
+                              subtitle: 'A 3-step refresher on the rules',
+                              onTap: () => _showHowToPlay(context),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            AppStrings.tagline,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
+                          ],
+                        ),
+                        const _SectionHeader('DATA'),
+                        _SettingsCard(
+                          children: [
+                            _ActionTile(
+                              icon: Icons.delete_forever_rounded,
+                              color: AppColors.error,
+                              title: AppStrings.resetProgress,
+                              titleColor: AppColors.error,
+                              subtitle: 'Reset all levels, stars and coins',
+                              onTap: () => _showResetDialog(context, controller),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Version 1.0.0',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textLight,
+                          ],
+                        ),
+                        const _SectionHeader('LEGAL'),
+                        _SettingsCard(
+                          children: [
+                            _ActionTile(
+                              icon: Icons.shield_rounded,
+                              color: AppColors.accentBlue,
+                              title: AppStrings.privacyPolicy,
+                              subtitle: 'View our privacy policy',
+                              trailing: Icons.open_in_new_rounded,
+                              onTap: () async {
+                                final uri = Uri.parse(_privacyUrl);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              },
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xxl),
+                        const _AppInfo(),
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -288,92 +150,14 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textLight,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
-  Widget _buildSettingsCard({required List<Widget> children}) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Material(
-          color: Colors.white,
-          child: Column(children: children),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            activeTrackColor: const Color(0xFF2563EB),
-            onChanged: onChanged,
-          ),
-        ],
+  void _showHowToPlay(BuildContext context) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      pageBuilder: (ctx, _, _) => Material(
+        type: MaterialType.transparency,
+        child: TutorialOverlay(onDismiss: () => Navigator.of(ctx).pop()),
       ),
     );
   }
@@ -381,54 +165,242 @@ class SettingsScreen extends StatelessWidget {
   void _showResetDialog(BuildContext context, SettingsController controller) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: const [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
-            SizedBox(width: 10),
+      builder: (ctx) => GameDialog(
+        icon: const DialogIcon(
+          icon: Icons.warning_amber_rounded,
+          color: AppColors.error,
+        ),
+        title: const Text(AppStrings.resetConfirmTitle),
+        message: const Text(AppStrings.resetConfirmBody),
+        children: [
+          PrimaryButton(
+            label: AppStrings.confirm,
+            backgroundColor: AppColors.error,
+            width: double.infinity,
+            onTap: () {
+              Navigator.of(ctx).pop();
+              controller.resetProgress();
+            },
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            label: AppStrings.cancel,
+            textColor: AppColors.textSecondary,
+            borderColor: AppColors.cardBorder,
+            onTap: () => Navigator.of(ctx).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: AppSpacing.lg,
+        bottom: AppSpacing.sm + 2,
+        left: AppSpacing.xs,
+      ),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textLight,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  final List<Widget> children;
+
+  const _SettingsCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        boxShadow: AppShadows.soft,
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        child: Material(
+          color: AppColors.surface,
+          child: Column(children: children),
+        ),
+      ),
+    );
+  }
+}
+
+class _TileDivider extends StatelessWidget {
+  const _TileDivider();
+
+  @override
+  Widget build(BuildContext context) => const Divider(
+        height: 1,
+        indent: 56,
+        endIndent: 16,
+        color: AppColors.surfaceMuted,
+      );
+}
+
+class _TileIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _TileIcon(this.icon, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: color, size: 22),
+    );
+  }
+}
+
+class _SwitchTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SwitchTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            _TileIcon(icon, iconColor),
+            const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                AppStrings.resetConfirmTitle,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.navyDark,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTextStyles.label),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: AppTextStyles.caption),
+                ],
               ),
+            ),
+            Switch.adaptive(
+              value: value,
+              activeTrackColor: AppColors.accentBlue,
+              onChanged: onChanged,
             ),
           ],
         ),
-        content: const Text(
-          AppStrings.resetConfirmBody,
-          style: TextStyle(
-            fontSize: 14,
-            height: 1.4,
-            color: AppColors.textSecondary,
-          ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final Color? titleColor;
+  final IconData trailing;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.titleColor,
+    this.trailing = Icons.chevron_right_rounded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      leading: _TileIcon(icon, color),
+      title: Text(
+        title,
+        style: AppTextStyles.label.copyWith(
+          fontSize: 16,
+          color: titleColor ?? AppColors.navyDark,
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: SecondaryButton(
-                  label: AppStrings.cancel,
-                  onTap: () => Navigator.of(ctx).pop(),
-                ),
+      ),
+      subtitle: Text(subtitle, style: AppTextStyles.caption),
+      trailing: Icon(trailing, color: titleColor ?? AppColors.textSecondary),
+      onTap: onTap,
+    );
+  }
+}
+
+class _AppInfo extends StatelessWidget {
+  const _AppInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.navyDark, AppColors.accentBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: PrimaryButton(
-                  label: AppStrings.confirm,
-                  backgroundColor: const Color(0xFFEF4444),
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    controller.resetProgress();
-                  },
-                ),
-              ),
-            ],
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: AppShadows.glow(AppColors.accentBlue),
+            ),
+            child: const Icon(
+              Icons.navigation_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const Text(AppStrings.appName, style: AppTextStyles.label),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(AppStrings.tagline, style: AppTextStyles.body),
+          const SizedBox(height: AppSpacing.sm),
+          const Text(
+            'Version 1.0.0',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textLight,
+            ),
           ),
         ],
       ),

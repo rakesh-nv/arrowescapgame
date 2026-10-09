@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
+import '../../data/models/arrow_state.dart';
 import '../../data/models/daily_challenge.dart';
 import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
@@ -12,6 +13,7 @@ import '../../data/repositories/progress_repository.dart';
 import '../../data/repositories/theme_repository.dart';
 import '../../game/engine/game_engine.dart';
 import '../../game/models/tap_result.dart';
+import '../../game/solver/level_solver.dart';
 import '../ads/ads_module.dart';
 import '../../services/analytics_service.dart';
 import '../../services/audio_service.dart';
@@ -39,9 +41,21 @@ class GameplayController extends GetxController {
 
   /// Brief reward beat between the final escape and the completion dialog.
   final RxBool isCompleting = false.obs;
+
+  /// Whether the how-to-play overlay is showing.
   final RxBool isTutorialLevel = false.obs;
   final RxString hintedArrowId = ''.obs;
   final RxString animatingArrowId = ''.obs;
+
+  /// True while the next board is generated off the UI thread.
+  final RxBool isLoadingLevel = false.obs;
+
+  /// The arrow that stopped the last blocked tap, briefly highlighted.
+  final RxString blockerArrowId = ''.obs;
+  Timer? _blockerTimer;
+
+  /// Increments on every load so a slow, superseded load is dropped.
+  int _loadToken = 0;
 
   /// Short glow given to moves unlocked by the most recent escape.
   final RxSet<String> newlyAvailableArrowIds = <String>{}.obs;
@@ -69,6 +83,10 @@ class GameplayController extends GetxController {
   LevelModel? get currentLevel => _level.value;
   Difficulty get difficulty => _level.value?.difficulty ?? Difficulty.easy;
 
+  /// Picture the arrows form ("Cat"), and its outline for the board backdrop.
+  String? get shapeName => _level.value?.shapeName;
+  Set<(int, int)> get shapeCells => _level.value?.shapeCells ?? const {};
+
   /// Number of filled hearts to display in the UI (0 to 3).
   /// Players have 4 attempts: 4->3 hearts, 3->2 hearts, 2->1 heart, 1->0 hearts (last chance danger state).
   int get displayHearts => (lives.value - 1).clamp(0, 3);
@@ -85,8 +103,13 @@ class GameplayController extends GetxController {
   @override
   void onClose() {
     _cancelPendingEscape();
+    _blockerTimer?.cancel();
     super.onClose();
   }
+
+  int get totalArrows => arrows.length;
+  int get clearedArrows =>
+      arrows.where((a) => a.state == ArrowState.removed).length;
 
   void _cancelPendingEscape() {
     _escapeTimer?.cancel();
@@ -105,19 +128,37 @@ class GameplayController extends GetxController {
     );
   }
 
-  void loadLevel(int lvl) {
+  /// Loads campaign level [lvl]. A board that is not cached yet is generated
+  /// on a background isolate while [isLoadingLevel] is set.
+  Future<void> loadLevel(int lvl) async {
+    final token = ++_loadToken;
     _cancelPendingEscape();
+    _clearBlocker();
     animatingArrowId.value = '';
+    hintedArrowId.value = '';
     isComplete.value = false;
     isCompleting.value = false;
     isGameOver.value = false;
     isDailyChallenge.value = false;
     _dailyDateKey = null;
+    levelNumber.value = lvl;
     _syncTheme();
     _ensureStartingHints();
+
+    if (LevelRepository.cachedLevel(lvl) == null) {
+      isLoadingLevel.value = true;
+      arrows.clear();
+      try {
+        await LevelRepository.prepareLevels(lvl, requireFirst: true);
+      } catch (_) {
+        // Falls through to synchronous generation below.
+      }
+      if (isClosed || token != _loadToken) return;
+    }
+    isLoadingLevel.value = false;
+
     final level = LevelRepository.getLevel(lvl);
     _level.value = level;
-    levelNumber.value = lvl;
 
     final saved = _storage.getSavedGame(lvl);
     if (saved != null) {
@@ -143,7 +184,7 @@ class GameplayController extends GetxController {
 
     _syncState();
     newlyAvailableArrowIds.clear();
-    isTutorialLevel.value = lvl == 1;
+    isTutorialLevel.value = lvl == 1 && !_progress.progress.hasSeenTutorial;
 
     _analytics.logEvent(
       AnalyticsEvent.levelStarted,
@@ -154,8 +195,12 @@ class GameplayController extends GetxController {
   /// Loads a daily challenge board. [dailyDateKey] ('YYYY-MM-DD') identifies
   /// the challenge's date; it defaults to today.
   void loadLevelModel(LevelModel level, {String? dailyDateKey}) {
+    _loadToken++;
+    isLoadingLevel.value = false;
     _cancelPendingEscape();
+    _clearBlocker();
     animatingArrowId.value = '';
+    hintedArrowId.value = '';
     isDailyChallenge.value = true;
     _dailyDateKey = dailyDateKey ?? DailyChallenge.todayKey();
     _syncTheme();
@@ -236,13 +281,16 @@ class GameplayController extends GetxController {
     // second path mid-animation would make occupancy and visual motion diverge.
     if (isComplete.value ||
         isGameOver.value ||
+        isLoadingLevel.value ||
         animatingArrowId.value.isNotEmpty ||
-        lives.value <= 0)
+        lives.value <= 0) {
       return;
+    }
 
     // Immediately dismiss any active hint when the user taps an arrow
     hintedArrowId.value = '';
     newlyAvailableArrowIds.clear();
+    _clearBlocker();
 
     final arrowLength = _engine.arrowLength(arrowId);
     final result = _engine.tapArrow(arrowId);
@@ -251,6 +299,7 @@ class GameplayController extends GetxController {
     switch (result) {
       case TapResult.valid:
         _audio.playArrowEscape();
+        _haptic.selectionClick();
         animatingArrowId.value = arrowId;
         _analytics.logEvent(
           AnalyticsEvent.arrowTapped,
@@ -284,6 +333,7 @@ class GameplayController extends GetxController {
         _audio.playBlocked();
         _analytics.logEvent(AnalyticsEvent.arrowBlocked);
         _haptic.lightTap();
+        _showBlocker(arrowId);
         saveCurrentGame();
 
         if (_engine.lives <= 0) {
@@ -316,6 +366,7 @@ class GameplayController extends GetxController {
 
   void onUndo() {
     if (!_engine.canUndo) return;
+    _clearBlocker();
     _cancelPendingEscape();
     _engine.undo();
     hintedArrowId.value = '';
@@ -343,6 +394,7 @@ class GameplayController extends GetxController {
   }
 
   void onReset() {
+    _clearBlocker();
     _cancelPendingEscape();
     clearSavedGame();
     _engine.reset();
@@ -379,7 +431,33 @@ class GameplayController extends GetxController {
     return granted;
   }
 
+  /// Shows the how-to-play overlay again (pause menu, settings).
+  void showTutorial() => isTutorialLevel.value = true;
+
+  void dismissTutorial() {
+    isTutorialLevel.value = false;
+    _progress.markTutorialSeen();
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
+
+  /// Briefly highlights the arrow standing in the tapped arrow's exit lane.
+  void _showBlocker(String tappedId) {
+    final active = _engine.activeArrows;
+    final tapped = active.where((a) => a.id == tappedId).firstOrNull;
+    if (tapped == null) return;
+    final blocker = LevelSolver.firstBlocker(tapped, active, _engine.gridSize);
+    if (blocker == null) return;
+    blockerArrowId.value = blocker;
+    _blockerTimer?.cancel();
+    _blockerTimer = Timer(const Duration(milliseconds: 700), _clearBlocker);
+  }
+
+  void _clearBlocker() {
+    _blockerTimer?.cancel();
+    _blockerTimer = null;
+    blockerArrowId.value = '';
+  }
 
   void _syncState() {
     arrows.value = _engine.allArrows;

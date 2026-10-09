@@ -3,6 +3,7 @@ import 'dart:ui' show PathMetric;
 import 'package:flutter/material.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
+import '../config/puzzle_config.dart';
 
 /// Cached, rounded route used by an escaping arrow.  The route is built once
 /// by [ArrowWidget], so every animation frame only samples a PathMetric.
@@ -135,8 +136,6 @@ class ArrowPainter extends CustomPainter {
   /// through the bends, producing the reference snake/uncoiling motion.
   final double? snakeProgress;
 
-  /// Same timeline as [snakeProgress]; separated to keep trail drawing optional.
-  final double? trailProgress;
   final Offset shakeOffset;
   final ArrowMotionPath motionPath;
 
@@ -148,7 +147,6 @@ class ArrowPainter extends CustomPainter {
     this.showGlow = false,
     this.opacity = 1.0,
     this.snakeProgress,
-    this.trailProgress,
     this.shakeOffset = Offset.zero,
     required this.motionPath,
   });
@@ -159,9 +157,9 @@ class ArrowPainter extends CustomPainter {
 
     canvas.save();
 
-    // Doubled arrow stroke and arrowhead sizing for large cell visuals.
-    final strokeWidth = (cellSize * 0.36).clamp(10.0, 22.0);
-    final headSize = (strokeWidth * 1.70).clamp(18.0, 36.0);
+    // Thin body and a proportionate head (shared with PuzzleConfig).
+    final strokeWidth = PuzzleConfig.strokeWidthFor(cellSize);
+    final headSize = PuzzleConfig.headSizeFor(cellSize);
     final progress = snakeProgress ?? 0.0;
     final shift = snakeProgress == null
         ? 0.0
@@ -195,30 +193,9 @@ class ArrowPainter extends CustomPainter {
     );
     path.lineTo(lineEnd.dx, lineEnd.dy);
 
-    // A single soft stroke is enough to imply momentum without noisy particles.
-    if (trailProgress != null && trailProgress! > 0.04) {
-      final trailAmount = (trailProgress! * 0.72).clamp(0.0, 0.72);
-      final tailDirection = motionPath.directionAt(shift);
-      final tail =
-          animated.first + shakeOffset - tailDirection * (cellSize * 1.25);
-      final trail = Path()
-        ..moveTo(tail.dx, tail.dy)
-        ..lineTo(
-          animated.first.dx + shakeOffset.dx,
-          animated.first.dy + shakeOffset.dy,
-        );
-      final trailPaint = Paint()
-        ..isAntiAlias = true
-        ..color = bodyColor.withValues(alpha: (0.18 * (1 - trailAmount)))
-        ..strokeWidth = strokeWidth * 0.9
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      canvas.drawPath(trail, trailPaint);
-    }
-
-    // Optional hint/selection glow
+    // No trail, drop shadow or blurred copy is drawn behind the arrow: only
+    // the body and its head. The glow below is the hint / blocking-arrow
+    // indicator and appears only while that cue is active.
     if (showGlow) {
       final glowPaint = Paint()
         ..isAntiAlias = true
@@ -292,7 +269,6 @@ class ArrowPainter extends CustomPainter {
         oldDelegate.showGlow != showGlow ||
         oldDelegate.opacity != opacity ||
         oldDelegate.snakeProgress != snakeProgress ||
-        oldDelegate.trailProgress != trailProgress ||
         oldDelegate.shakeOffset != shakeOffset ||
         oldDelegate.arrow.state != arrow.state ||
         oldDelegate.arrow.points != arrow.points;

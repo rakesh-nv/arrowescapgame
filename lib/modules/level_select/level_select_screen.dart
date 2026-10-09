@@ -3,8 +3,12 @@ import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/design_tokens.dart';
+import '../../game/config/difficulty_curve.dart';
 import '../../services/economy_service.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/coin_badge.dart';
+import '../../widgets/stat_pill.dart';
 import '../ads/ads_module.dart';
 import 'level_select_controller.dart';
 import 'widgets/level_map_background.dart';
@@ -218,7 +222,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FF),
+      backgroundColor: AppColors.backgroundLight,
       body: Stack(
         children: [
           // 1. Scrollable Vertical Map Viewport
@@ -228,44 +232,52 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
             child: SizedBox(
               width: screenWidth,
               height: totalHeight,
-              child: AnimatedBuilder(
-                animation: _progressionAnimController,
-                builder: (context, child) {
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // Background Sky & Biomes
-                      LevelMapBackground(
-                        totalHeight: totalHeight,
-                        screenWidth: screenWidth,
-                      ),
-
-                      // Winding Path CustomPainter
-                      CustomPaint(
-                        size: Size(screenWidth, totalHeight),
-                        painter: LevelMapPainter(
-                          controller: controller,
-                          totalLevels: AppConstants.totalLevels,
-                          highestUnlocked: controller.highestUnlocked,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Static layers: painted once, not on every animation frame.
+                  RepaintBoundary(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        LevelMapBackground(
                           totalHeight: totalHeight,
-                          rowHeight: rowHeight,
-                          paddingBottom: paddingBottom,
+                          screenWidth: screenWidth,
                         ),
-                      ),
+                        CustomPaint(
+                          size: Size(screenWidth, totalHeight),
+                          painter: LevelMapPainter(
+                            controller: controller,
+                            totalLevels: AppConstants.totalLevels,
+                            highestUnlocked: controller.highestUnlocked,
+                            totalHeight: totalHeight,
+                            rowHeight: rowHeight,
+                            paddingBottom: paddingBottom,
+                          ),
+                        ),
+                        ..._buildWorldBanners(),
+                      ],
+                    ),
+                  ),
 
-                      // World Landmark Banners
-                      ..._buildWorldBanners(screenWidth),
-
-                      // Level Nodes (1 to 100)
-                      ..._buildLevelNodes(screenWidth),
-
-                      // Player Avatar Marker
-                      PlayerAvatarMarker(
-                        position: _calculateMarkerPosition(screenWidth),
-                      ),
-                    ],
-                  );
-                },
+                  // Level nodes and the player marker animate on progression.
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: _progressionAnimController,
+                      builder: (context, child) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ..._buildLevelNodes(screenWidth),
+                            PlayerAvatarMarker(
+                              position: _calculateMarkerPosition(screenWidth),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -278,7 +290,21 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
             child: _buildTopHeader(economy),
           ),
 
-          // 3. Bottom Banner Ad
+          // 3. Jump back to the current level, above the banner
+          Positioned(
+            right: AppSpacing.lg,
+            bottom: MediaQuery.paddingOf(context).bottom + 70,
+            child: FloatingActionButton.small(
+              heroTag: 'jump_current',
+              tooltip: AppStrings.jumpToCurrent,
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.accentBlue,
+              onPressed: _scrollToCurrent,
+              child: const Icon(Icons.my_location_rounded),
+            ),
+          ),
+
+          // 4. Bottom Banner Ad
           const Positioned(
             bottom: 0,
             left: 0,
@@ -298,31 +324,42 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     );
   }
 
-  List<Widget> _buildWorldBanners(double screenWidth) {
-    final List<Widget> banners = [];
-    final worlds = [
-      {'lvl': 1, 'title': AppStrings.world1, 'sub': AppStrings.world1Sub, 'color': AppColors.diffEasy},
-      {'lvl': 21, 'title': AppStrings.world2, 'sub': AppStrings.world2Sub, 'color': AppColors.diffNormal},
-      {'lvl': 51, 'title': AppStrings.world3, 'sub': AppStrings.world3Sub, 'color': AppColors.diffHard},
-      {'lvl': 81, 'title': AppStrings.world4, 'sub': AppStrings.world4Sub, 'color': AppColors.diffExpert},
-    ];
+  void _scrollToCurrent() {
+    if (!_scrollController.hasClients) return;
+    final target = controller.getScrollOffsetForLevel(
+      controller.highestUnlocked,
+      totalHeight,
+      rowHeight,
+      paddingBottom,
+      MediaQuery.sizeOf(context).height,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
-    for (final w in worlds) {
-      final lvl = w['lvl'] as int;
-      final y = controller.getNodeY(lvl, totalHeight, rowHeight, paddingBottom) + 48;
-      banners.add(
+  List<Widget> _buildWorldBanners() {
+    return [
+      for (final w in DifficultyCurve.worlds)
         Positioned(
-          left: (screenWidth - 180) / 2,
-          top: y,
-          child: WorldBannerWidget(
-            title: w['title'] as String,
-            subtitle: w['sub'] as String,
-            accentColor: w['color'] as Color,
+          left: 0,
+          right: 0,
+          top: controller.getNodeY(
+                  w.firstLevel, totalHeight, rowHeight, paddingBottom) +
+              48,
+          child: Center(
+            child: WorldBannerWidget(
+              title: '${AppStrings.world} ${w.number} · ${w.name}',
+              subtitle: '${AppStrings.level} ${w.firstLevel}–${w.lastLevel}'
+                  '  ·  ${w.difficulty.displayName}',
+              accentColor: difficultyColor(w.difficulty),
+            ),
           ),
         ),
-      );
-    }
-    return banners;
+    ];
   }
 
   List<Widget> _buildLevelNodes(double screenWidth) {
@@ -378,99 +415,56 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   }
 
   Widget _buildTopHeader(EconomyService economy) {
+    final world = DifficultyCurve.worldFor(controller.highestUnlocked);
+    final cleared = controller.completedCount;
     return Container(
       padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 8,
-        bottom: 12,
-        left: 16,
-        right: 16,
+        top: MediaQuery.paddingOf(context).top + AppSpacing.sm,
+        bottom: AppSpacing.md,
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: Colors.white.withValues(alpha: 0.94),
+        boxShadow: AppShadows.soft,
       ),
       child: Row(
         children: [
-          // Back button
-          GestureDetector(
+          AppIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            tooltip: 'Back',
             onTap: () => Get.back(),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                size: 18,
-                color: AppColors.navyDark,
-              ),
-            ),
           ),
-          const SizedBox(width: 12),
-
-          // Title
-          const Expanded(
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  AppStrings.levelSelect,
-                  style: TextStyle(
-                    fontSize: 19,
+                  AppStrings.levelMap,
+                  style: AppTextStyles.heading.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: AppColors.navyDark,
                   ),
                 ),
                 Text(
-                  'Progression Map',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  '${world.name} · $cleared/${AppConstants.totalLevels} cleared',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption,
                 ),
               ],
             ),
           ),
-
-          // Total Stars Badge
           Obx(
-            () => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.starGold.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.starGold.withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.star_rounded, color: AppColors.starGold, size: 18),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${controller.totalStars}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: AppColors.navyDark,
-                    ),
-                  ),
-                ],
-              ),
+            () => StatPill(
+              icon: Icons.star_rounded,
+              value: '${controller.totalStarsCount.value}',
+              color: AppColors.starGold,
+              semanticLabel: '${controller.totalStarsCount.value} stars',
             ),
           ),
-          const SizedBox(width: 8),
-
-          // Coin Badge
+          const SizedBox(width: AppSpacing.sm),
           Obx(() => CoinBadge(coins: economy.coins.value, fontSize: 13)),
         ],
       ),

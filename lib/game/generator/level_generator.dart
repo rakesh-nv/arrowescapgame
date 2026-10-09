@@ -7,10 +7,11 @@ import '../../data/models/arrow_direction.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
+import '../config/difficulty_curve.dart';
 import '../solver/level_solver.dart';
 import 'dependency_analyzer.dart';
 import 'shape_path_generator.dart';
-import 'shape_template.dart';
+import 'silhouette.dart';
 
 typedef Cell = (int, int);
 
@@ -25,224 +26,65 @@ class LevelLayoutInfo {
   String toString() => '$shape / $family';
 }
 
-/// Structural signature used for anti-duplicate level detection.
-class LevelPatternSignature {
-  final PatternType patternType;
-  final int arrowCount;
-  final int totalOccupiedCells;
-  final int signatureHash;
+/// One pass of generation attempts with a given strictness.
+class _Stage {
+  final int attempts;
 
-  LevelPatternSignature({
-    required this.patternType,
-    required this.arrowCount,
-    required this.totalOccupiedCells,
-    required this.signatureHash,
-  });
+  /// 0 = full quality gate; 1–2 = progressively relaxed; 3 = validity and
+  /// solvability only.
+  final int relax;
+  final int Function(int seed, int attempt, int levelNumber) rngSeed;
 
-  static LevelPatternSignature fromLevel({
-    required List<ArrowModel> arrows,
-    required PatternType patternType,
-    required int gridSize,
-  }) {
-    final occupied = <Cell>{for (final a in arrows) ...a.occupiedCells};
-
-    final dirCounts = <int>[0, 0, 0, 0];
-    for (final a in arrows) {
-      dirCounts[a.exitDirection.index]++;
-    }
-
-    var h = 17;
-    h = 37 * h + patternType.index;
-    h = 37 * h + arrows.length;
-    h = 37 * h + occupied.length;
-    h = 37 * h + dirCounts.join().hashCode;
-
-    for (final a in arrows) {
-      h = 37 * h + a.headRow * 31 + a.headCol;
-      h = 37 * h + a.exitDirection.index;
-    }
-
-    return LevelPatternSignature(
-      patternType: patternType,
-      arrowCount: arrows.length,
-      totalOccupiedCells: occupied.length,
-      signatureHash: h,
-    );
-  }
-
-  bool isTooSimilarTo(LevelPatternSignature other) {
-    if (signatureHash == other.signatureHash) return true;
-    if (patternType == other.patternType &&
-        arrowCount == other.arrowCount &&
-        (totalOccupiedCells - other.totalOccupiedCells).abs() <= 1) {
-      return true;
-    }
-    return false;
-  }
+  const _Stage(this.attempts, this.relax, this.rngSeed);
 }
 
-class _DifficultyParams {
-  final int gridSize;
-  final double targetDensity;
-  final int maxMistakes;
-  final double minBends;
-  final int minDepth;
-  final int minArrows;
-  final int maxArrowLen;
-  final double avgTargetLen;
-
-  const _DifficultyParams({
-    required this.gridSize,
-    required this.targetDensity,
-    required this.maxMistakes,
-    required this.minBends,
-    required this.minDepth,
-    required this.minArrows,
-    required this.maxArrowLen,
-    required this.avgTargetLen,
-  });
-}
-
-/// Advanced procedural generator producing dense, solvable Arrow Escape boards.
+/// Procedural generator producing solver-verified Arrow Escape boards.
+///
+/// A board is a pure function of (level number, seed, difficulty): the same
+/// inputs always give the same board, whatever was generated before. Board
+/// size, fill, arrow lengths and the quality bar all come from
+/// [DifficultyCurve].
 class LevelGenerator {
   LevelGenerator._();
 
-  static final Map<int, LevelPatternSignature> _recentSignatures = {};
+  static final List<_Stage> _stages = [
+    _Stage(8, 0, (s, a, n) => s ^ (a * 0x9E3779B9) ^ (n * 31337)),
+    _Stage(4, 1, (s, a, n) => s ^ (a * 0x7FFFFFED) ^ 0xBEEF),
+    _Stage(4, 2, (s, a, n) => s ^ (a * 0x7FFFFFAB) ^ 0xCAFE),
+    _Stage(4, 3, (s, a, n) => s ^ (a * 0x12345678) ^ 0xFEED),
+  ];
 
-  /// Copy of the anti-duplicate history, so generation can run on a background
-  /// isolate with the same history the UI isolate has (and hand it back).
-  static Map<int, LevelPatternSignature> get recentSignatures =>
-      Map.of(_recentSignatures);
+  /// Board parameters used for [levelNumber], or for [difficulty] when one is
+  /// given explicitly (daily challenge, tests).
+  static PuzzleSpec specFor(int levelNumber, [Difficulty? difficulty]) =>
+      difficulty == null
+      ? DifficultyCurve.forLevel(levelNumber)
+      : DifficultyCurve.forDifficulty(difficulty);
 
-  /// Merges signatures produced elsewhere; existing entries are kept.
-  static void restoreSignatures(Map<int, LevelPatternSignature> signatures) {
-    signatures.forEach((level, sig) {
-      _recentSignatures.putIfAbsent(level, () => sig);
-    });
-  }
+  /// Campaign silhouette for [levelNumber].
+  static Silhouette silhouetteForLevel(int levelNumber) =>
+      DifficultyCurve.silhouetteForLevel(levelNumber);
 
-  static double getMinOccupancyForLevel(int levelNumber) {
-    if (levelNumber == 1) return 0.35;
-    if (levelNumber == 2) return 0.40;
-    if (levelNumber == 3) return 0.45;
-    if (levelNumber == 4) return 0.50;
-    if (levelNumber == 5) return 0.55;
-    if (levelNumber == 6) return 0.60;
-    if (levelNumber == 7) return 0.65;
-    if (levelNumber == 8) return 0.70;
-    return 0.75;
-  }
+  /// Board size campaign [levelNumber] is built on.
+  static int gridForLevel(int levelNumber) => DifficultyCurve.gridFor(
+    specFor(levelNumber),
+    silhouetteForLevel(levelNumber),
+  );
 
-  static const Map<Difficulty, _DifficultyParams> _params = {
-    Difficulty.easy: _DifficultyParams(
-      gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.98,
-      maxMistakes: 5,
-      minBends: 0.4,
-      minDepth: 1,
-      minArrows: 30,
-      maxArrowLen: 45,
-      avgTargetLen: 5.0,
-    ),
-    Difficulty.normal: _DifficultyParams(
-      gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.98,
-      maxMistakes: 4,
-      minBends: 0.5,
-      minDepth: 2,
-      minArrows: 38,
-      maxArrowLen: 45,
-      avgTargetLen: 5.5,
-    ),
-    Difficulty.hard: _DifficultyParams(
-      gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.98,
-      maxMistakes: 3,
-      minBends: 0.6,
-      minDepth: 3,
-      minArrows: 46,
-      maxArrowLen: 45,
-      avgTargetLen: 6.0,
-    ),
-    Difficulty.expert: _DifficultyParams(
-      gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.98,
-      maxMistakes: 2,
-      minBends: 0.7,
-      minDepth: 4,
-      minArrows: 54,
-      maxArrowLen: 45,
-      avgTargetLen: 6.5,
-    ),
-    Difficulty.extreme: _DifficultyParams(
-      gridSize: AppConstants.fixedGridSize,
-      targetDensity: 0.98,
-      maxMistakes: 1,
-      minBends: 0.8,
-      minDepth: 5,
-      minArrows: 62,
-      maxArrowLen: 45,
-      avgTargetLen: 7.0,
-    ),
-  };
-
-  /// Selects controlled random difficulty based on level progression stage.
-  static Difficulty selectDifficulty(int levelNumber, Random rng) {
-    if (levelNumber <= 3) return Difficulty.easy;
-    if (levelNumber <= 5) return Difficulty.normal;
-    if (levelNumber <= 10) return Difficulty.hard;
-    if (levelNumber <= 20) return Difficulty.expert;
-    return Difficulty.extreme;
-  }
-
-
-  /// Resolves the campaign pattern type matching the 100 level pattern reference sequence.
-  static PatternType getPatternForLevel(int levelNumber) {
-    switch (levelNumber) {
-      case 1:
-        return PatternType.square;
-      case 2:
-        return PatternType.heart;
-      case 3:
-        return PatternType.star;
-      case 4:
-        return PatternType.diamond;
-      case 5:
-        return PatternType.cat;
-      case 6:
-        return PatternType.ring;
-      case 7:
-        return PatternType.butterfly;
-      case 8:
-        return PatternType.diamond;
-      case 9:
-        return PatternType.randomGeometric;
-      case 10:
-        return PatternType.cross;
-      case 11:
-        return PatternType.squareRing;
-      case 12:
-        return PatternType.starSquare;
-      case 13:
-        return PatternType.rocket;
-      case 14:
-        return PatternType.interlocked;
-      case 15:
-        return PatternType.crown;
-      case 16:
-        return PatternType.ring;
-      case 17:
-        return PatternType.butterfly;
-      case 18:
-        return PatternType.diamond;
-      case 19:
-        return PatternType.crown;
-      case 20:
-        return PatternType.hexagon;
-      default:
-        final all = PatternType.values;
-        return all[(levelNumber - 1) % all.length];
+  static Silhouette _silhouetteFor(
+    int levelNumber,
+    int seed,
+    Difficulty? difficulty,
+    PuzzleSpec spec,
+  ) {
+    if (difficulty == null && levelNumber >= 1) {
+      return silhouetteForLevel(levelNumber);
     }
+    return DifficultyCurve.silhouetteForSeed(
+      seed ^ levelNumber,
+      spec.gridSize,
+      targetCells: spec.targetCells,
+    );
   }
 
   /// Returns layout information for diagnostic tools.
@@ -250,295 +92,238 @@ class LevelGenerator {
     required int levelNumber,
     required int seed,
   }) {
-    final p = getPatternForLevel(levelNumber);
-    return LevelLayoutInfo(shape: p.name, family: 'procedural ${p.name}');
+    final s = silhouetteForLevel(levelNumber);
+    return LevelLayoutInfo(shape: s.name, family: s.category.name);
   }
 
-  /// Generates a complete, solver-verified puzzle level with 100% arrow coverage.
+  /// Generates a solver-verified board in the level's silhouette. Never
+  /// returns null: if every bounded attempt fails, it returns
+  /// [guaranteedLevel] filling the same silhouette.
+  ///
+  /// [silhouette] and [gridSize] override the curve (tests and tools).
   static LevelModel? generate({
     required int levelNumber,
     required int seed,
     Difficulty? difficulty,
+    Silhouette? silhouette,
+    int? gridSize,
   }) {
-    final baseRng = Random(seed ^ (levelNumber * 7919));
+    final base = specFor(levelNumber, difficulty);
+    final shape =
+        silhouette ?? _silhouetteFor(levelNumber, seed, difficulty, base);
+    // Board size follows the picture: enough cells for the level's target
+    // playable area (see DifficultyCurve.gridFor), unless overridden.
+    final spec =
+        base.withGridSize(gridSize ?? DifficultyCurve.gridFor(base, shape));
 
-    // Controlled Random Difficulty
-    final resolvedDifficulty =
-        difficulty ?? selectDifficulty(levelNumber, baseRng);
-    final params = _params[resolvedDifficulty] ?? _params[Difficulty.normal]!;
-
-    final patternType = getPatternForLevel(levelNumber);
-    final prevSig = _recentSignatures[levelNumber - 1];
-
-    // Keep synchronous generation comfortably below Android's input timeout.
-    for (var attempt = 0; attempt < 8; attempt++) {
-      final attemptSeed = seed ^ (attempt * 0x9E3779B9) ^ (levelNumber * 31337);
-      final rng = Random(attemptSeed);
-
-      // Random Geometry Mask
-      final shapeMask = PatternGenerator.generateMask(
-        type: patternType,
-        gridSize: params.gridSize,
-        rng: rng,
-      );
-
-      final candidate = _synthesizeLevel(
-        rng: rng,
-        params: params,
-        levelNumber: levelNumber,
-        patternType: patternType,
-        shapeMask: shapeMask,
-      );
-
-      if (candidate == null || candidate.isEmpty) continue;
-
-      // Quality & Length Validation
-      if (!_passesQuality(candidate, params, shapeMask, levelNumber)) continue;
-
-      // Solvability Validation
-      final solveResult = LevelSolver.solve(candidate, params.gridSize);
-      if (!solveResult.solvable) continue;
-
-      // Anti-Duplicate Validation
-      final candidateSig = LevelPatternSignature.fromLevel(
-        arrows: candidate,
-        patternType: patternType,
-        gridSize: params.gridSize,
-      );
-
-      if (prevSig != null && candidateSig.isTooSimilarTo(prevSig)) {
-        continue;
-      }
-
-      _recentSignatures[levelNumber] = candidateSig;
-
-      if (kDebugMode) {
-        final metrics = DependencyAnalyzer.analyze(
-          candidate,
-          params.gridSize,
-          usableMask: shapeMask,
+    for (final stage in _stages) {
+      // Every valid candidate of a stage competes; the one closest to the
+      // curve's planning targets wins, so difficulty follows the curve instead
+      // of whatever the first acceptable board happened to be. Deterministic:
+      // attempts run in a fixed order and ties keep the earlier candidate.
+      List<ArrowModel>? best;
+      Set<Cell>? bestMask;
+      var bestScore = double.infinity;
+      for (var attempt = 0; attempt < stage.attempts; attempt++) {
+        final rng = Random(stage.rngSeed(seed, attempt, levelNumber));
+        final mask = shape
+            .rasterize(
+              spec.gridSize,
+              mirror: shape.mirrorable && rng.nextBool(),
+            )
+            .cells;
+        final candidate = ShapePathGenerator.generatePaths(
+          shapeMask: mask,
+          gridSize: spec.gridSize,
+          targetDensity: max(0.6, spec.fill - 0.04 * stage.relax),
+          levelNumber: levelNumber,
+          minArrowLen: 3,
+          maxArrowLen: spec.maxAbsorbLen,
+          minArrows: spec.minArrowsFor(mask.length),
+          averageLength: spec.avgArrowLen,
+          maxTierLen: spec.maxTierLen,
+          rng: rng,
         );
-        // ignore: avoid_print
-        print(
-          'Level number: $levelNumber\n'
-          'Pattern type: ${patternType.name.toUpperCase()}\n'
-          'Arrow count: ${candidate.length}\n'
-          'Occupied cells: ${metrics.occupiedCells}\n'
-          'Occupancy %: ${(metrics.occupancy * 100).toStringAsFixed(1)}%\n'
-          'Average path length: ${metrics.averagePathLength.toStringAsFixed(1)}\n'
-          'Longest path: ${metrics.longestPathLength}\n'
-          'Very-long arrow count: ${metrics.veryLongCount}\n'
-          'Dependency depth: ${metrics.dependencyDepth}\n'
-          'Connected components: ${metrics.connectedComponents}\n'
-          'Validation result: ACCEPTED\n'
-          'Random seed: $attemptSeed',
-        );
-      }
-
-      return LevelModel(
-        levelNumber: levelNumber,
-        seed: seed,
-        gridSize: params.gridSize,
-        difficulty: resolvedDifficulty,
-        arrowCount: candidate.length,
-        maxMistakes: params.maxMistakes,
-        arrows: candidate,
-      );
-    }
-
-    // Relaxed Fallback Pass
-    final relaxed = _DifficultyParams(
-      gridSize: params.gridSize,
-      targetDensity: 0.90,
-      maxMistakes: params.maxMistakes,
-      minBends: max(0.3, params.minBends - 0.3),
-      minDepth: max(1, params.minDepth - 1),
-      minArrows: max(18, params.minArrows - 8),
-      maxArrowLen: params.maxArrowLen,
-      avgTargetLen: params.avgTargetLen,
-    );
-
-    for (var attempt = 0; attempt < 4; attempt++) {
-      final rng = Random(seed ^ (attempt * 0x7FFFFFED) ^ 0xBEEF);
-      final patternType = getPatternForLevel(levelNumber);
-      final shapeMask = PatternGenerator.generateMask(
-        type: patternType,
-        gridSize: params.gridSize,
-        rng: rng,
-      );
-
-      final candidate = _synthesizeLevel(
-        rng: rng,
-        params: relaxed,
-        levelNumber: levelNumber,
-        patternType: patternType,
-        shapeMask: shapeMask,
-      );
-
-      if (candidate != null &&
-          candidate.isNotEmpty &&
-          _passesQuality(
-            candidate,
-            relaxed,
-            shapeMask,
-            levelNumber,
-            isRelaxed: true,
-          ) &&
-          LevelSolver.solve(candidate, params.gridSize).solvable) {
-        if (kDebugMode) {
-          final metrics = DependencyAnalyzer.analyze(
-            candidate,
-            params.gridSize,
-            usableMask: shapeMask,
-          );
-          // ignore: avoid_print
-          print(
-            'Level number: $levelNumber\n'
-            'Pattern type: ${patternType.name.toUpperCase()}\n'
-            'Arrow count: ${candidate.length}\n'
-            'Occupied cells: ${metrics.occupiedCells}\n'
-            'Occupancy %: ${(metrics.occupancy * 100).toStringAsFixed(1)}%\n'
-            'Average path length: ${metrics.averagePathLength.toStringAsFixed(1)}\n'
-            'Longest path: ${metrics.longestPathLength}\n'
-            'Very-long arrow count: ${metrics.veryLongCount}\n'
-            'Dependency depth: ${metrics.dependencyDepth}\n'
-            'Connected components: ${metrics.connectedComponents}\n'
-            'Validation result: ACCEPTED (FALLBACK)\n'
-            'Random seed: ${seed ^ (attempt * 0x7FFFFFED) ^ 0xBEEF}',
-          );
+        if (candidate == null || candidate.isEmpty) continue;
+        if (!_isValidBoard(candidate, spec.gridSize)) continue;
+        if (stage.relax < 3 &&
+            !_passesQuality(candidate, spec, mask, stage.relax)) {
+          continue;
+        }
+        // Solver gate (rule 9) plus the planning measurements in one pass.
+        final plan = LevelSolver.planningStats(candidate, spec.gridSize);
+        if (plan == null) continue;
+        if (stage.relax < 3 &&
+            !_passesPlanning(candidate.length, plan, spec, stage.relax)) {
+          continue;
         }
 
-        return LevelModel(
-          levelNumber: levelNumber,
-          seed: seed,
-          gridSize: params.gridSize,
-          difficulty: resolvedDifficulty,
-          arrowCount: candidate.length,
-          maxMistakes: params.maxMistakes,
-          arrows: candidate,
-        );
+        final score = _targetDistance(candidate, plan, spec, mask);
+        if (score < bestScore) {
+          best = candidate;
+          bestMask = mask;
+          bestScore = score;
+        }
+        if (score <= _goodEnough) break;
       }
-    }
 
-    // Relaxed Fallback Pass 2
-    final relaxed2 = _DifficultyParams(
-      gridSize: params.gridSize,
-      targetDensity: 0.88,
-      maxMistakes: params.maxMistakes,
-      minBends: max(0.2, params.minBends - 0.4),
-      minDepth: max(1, params.minDepth - 1),
-      minArrows: max(14, params.minArrows - 14),
-      maxArrowLen: params.maxArrowLen,
-      avgTargetLen: params.avgTargetLen,
-    );
-
-    for (var attempt = 0; attempt < 4; attempt++) {
-      final rng = Random(seed ^ (attempt * 0x7FFFFFED) ^ 0xBEEF);
-      final patternType = getPatternForLevel(levelNumber);
-      final shapeMask = PatternGenerator.generateMask(
-        type: patternType,
-        gridSize: params.gridSize,
-        rng: rng,
-      );
-
-      final candidate = _synthesizeLevel(
-        rng: rng,
-        params: relaxed2,
-        levelNumber: levelNumber,
-        patternType: patternType,
-        shapeMask: shapeMask,
-      );
-
-      if (candidate != null &&
-          candidate.isNotEmpty &&
-          _passesQuality(
-            candidate,
-            relaxed2,
-            shapeMask,
-            levelNumber,
-            isRelaxed: true,
-          ) &&
-          LevelSolver.solve(candidate, params.gridSize).solvable) {
+      if (best != null) {
         if (kDebugMode) {
-          final metrics = DependencyAnalyzer.analyze(
-            candidate,
-            params.gridSize,
-            usableMask: shapeMask,
+          final m = DependencyAnalyzer.analyze(
+            best,
+            spec.gridSize,
+            usableMask: bestMask,
           );
-          // ignore: avoid_print
-          print(
-            'Level number: $levelNumber\n'
-            'Pattern type: ${patternType.name.toUpperCase()}\n'
-            'Arrow count: ${candidate.length}\n'
-            'Occupied cells: ${metrics.occupiedCells}\n'
-            'Occupancy %: ${(metrics.occupancy * 100).toStringAsFixed(1)}%\n'
-            'Average path length: ${metrics.averagePathLength.toStringAsFixed(1)}\n'
-            'Longest path: ${metrics.longestPathLength}\n'
-            'Very-long arrow count: ${metrics.veryLongCount}\n'
-            'Dependency depth: ${metrics.dependencyDepth}\n'
-            'Connected components: ${metrics.connectedComponents}\n'
-            'Validation result: ACCEPTED (FALLBACK)\n'
-            'Random seed: ${seed ^ (attempt * 0x7FFFFFED) ^ 0xBEEF}',
+          final plan = LevelSolver.planningStats(best, spec.gridSize)!;
+          debugPrint(
+            '[LevelGen] L$levelNumber ${shape.id} '
+            '${spec.gridSize}x${spec.gridSize} stage ${stage.relax} '
+            'arrows ${best.length} occ '
+            '${(m.occupancy * 100).toStringAsFixed(0)}% avgLen '
+            '${m.averagePathLength.toStringAsFixed(1)} rounds ${plan.rounds} '
+            'blocked ${(1 - plan.initiallyFree / best.length).toStringAsFixed(2)}',
           );
         }
-
-        return LevelModel(
-          levelNumber: levelNumber,
-          seed: seed,
-          gridSize: params.gridSize,
-          difficulty: resolvedDifficulty,
-          arrowCount: candidate.length,
-          maxMistakes: params.maxMistakes,
-          arrows: candidate,
+        return _model(
+          levelNumber,
+          seed,
+          spec,
+          best,
+          shapeName: shape.name,
+          shapeCells: bestMask!,
         );
       }
     }
 
-    // Stage 3 Emergency Safety Pass
-    final emergency = _DifficultyParams(
-      gridSize: params.gridSize,
-      targetDensity: 0.85,
-      maxMistakes: params.maxMistakes,
-      minBends: 0.1,
-      minDepth: 1,
-      minArrows: 7,
-      maxArrowLen: params.maxArrowLen,
-      avgTargetLen: 8.0,
+    return guaranteedLevel(
+      levelNumber: levelNumber,
+      seed: seed,
+      spec: spec,
+      mask: shape.rasterize(spec.gridSize).cells,
+      shapeName: shape.name,
     );
+  }
 
-    final emergencyPattern = getPatternForLevel(levelNumber);
-    for (var attempt = 0; attempt < 4; attempt++) {
-      final rng = Random(seed ^ (attempt * 0x12345678) ^ 0xFEED);
-      final shapeMask = PatternGenerator.generateMask(
-        type: emergencyPattern,
-        gridSize: params.gridSize,
-        rng: rng,
-      );
-
-      final candidate = _synthesizeLevel(
-        rng: rng,
-        params: emergency,
-        levelNumber: levelNumber,
-        patternType: emergencyPattern,
-        shapeMask: shapeMask,
-      );
-
-      if (candidate != null &&
-          candidate.isNotEmpty &&
-          LevelSolver.solve(candidate, params.gridSize).solvable) {
-        return LevelModel(
-          levelNumber: levelNumber,
-          seed: seed,
-          gridSize: params.gridSize,
-          difficulty: resolvedDifficulty,
-          arrowCount: candidate.length,
-          maxMistakes: params.maxMistakes,
-          arrows: candidate,
-        );
+  /// Last-resort board that is valid and solvable by construction: each row
+  /// of the [mask] (the whole board when null) is cut into straight 3–5 cell
+  /// arrows that all point the same way (alternating per row), so each row
+  /// clears from its exit side inward. Rows of the silhouette stay filled, so
+  /// even this board keeps the picture.
+  static LevelModel guaranteedLevel({
+    required int levelNumber,
+    required int seed,
+    PuzzleSpec? spec,
+    Set<Cell>? mask,
+    String? shapeName,
+  }) {
+    final s = spec ?? specFor(levelNumber);
+    final n = s.gridSize;
+    bool usable(int r, int c) => mask == null || mask.contains((r, c));
+    final arrows = <ArrowModel>[];
+    for (var r = 0; r < n; r++) {
+      final right = r.isEven;
+      var c = 0;
+      while (c < n) {
+        if (!usable(r, c)) {
+          c++;
+          continue;
+        }
+        var end = c;
+        while (end < n && usable(r, end)) {
+          end++;
+        }
+        // Run [c, end): split into arrows of 3, the last one absorbing 1–2.
+        var start = c;
+        while (end - start >= 3) {
+          var len = 3;
+          if (end - start - len < 3) len = end - start;
+          final cols = [for (var x = start; x < start + len; x++) x];
+          final ordered = right ? cols : cols.reversed.toList();
+          arrows.add(
+            ArrowModel(
+              id: 'a${(arrows.length + 1).toString().padLeft(3, '0')}',
+              points: [for (final x in ordered) (r, x)],
+            ),
+          );
+          start += len;
+        }
+        c = end;
       }
     }
 
-    return null;
+    // Second pass for silhouettes: vertical parts (legs, stems, masts) are
+    // too narrow for row arrows, so leftover column runs become vertical
+    // arrows. Each one is kept only if the board stays solvable.
+    if (mask != null) {
+      final used = <Cell>{for (final a in arrows) ...a.occupiedCells};
+      for (var c = 0; c < n; c++) {
+        var r = 0;
+        while (r < n) {
+          if (!usable(r, c) || used.contains((r, c))) {
+            r++;
+            continue;
+          }
+          var end = r;
+          while (end < n && usable(end, c) && !used.contains((end, c))) {
+            end++;
+          }
+          var start = r;
+          while (end - start >= 3) {
+            var len = 3;
+            if (end - start - len < 3) len = end - start;
+            final rows = [for (var y = start; y < start + len; y++) y];
+            for (final down in [true, false]) {
+              final ordered = down ? rows : rows.reversed.toList();
+              final arrow = ArrowModel(
+                id: 'a${(arrows.length + 1).toString().padLeft(3, '0')}',
+                points: [for (final y in ordered) (y, c)],
+              );
+              if (LevelSolver.solve([...arrows, arrow], n).solvable) {
+                arrows.add(arrow);
+                used.addAll(arrow.occupiedCells);
+                break;
+              }
+            }
+            start += len;
+          }
+          r = end;
+        }
+      }
+    }
+
+    if (arrows.isEmpty && mask != null) {
+      return guaranteedLevel(levelNumber: levelNumber, seed: seed, spec: s);
+    }
+    assert(LevelSolver.solve(arrows, n).solvable);
+    return _model(
+      levelNumber,
+      seed,
+      s,
+      arrows,
+      shapeName: shapeName,
+      shapeCells: mask ?? const {},
+    );
+  }
+
+  static LevelModel _model(
+    int levelNumber,
+    int seed,
+    PuzzleSpec spec,
+    List<ArrowModel> arrows, {
+    String? shapeName,
+    Set<Cell> shapeCells = const {},
+  }) {
+    return LevelModel(
+      levelNumber: levelNumber,
+      seed: seed,
+      gridSize: spec.gridSize,
+      difficulty: spec.difficulty,
+      arrowCount: arrows.length,
+      maxMistakes: AppConstants.maxLives,
+      arrows: arrows,
+      shapeName: shapeName,
+      shapeCells: shapeCells,
+    );
   }
 
   /// Calculates usable board occupancy.
@@ -554,93 +339,119 @@ class LevelGenerator {
     return denominator == 0 ? 0.0 : cells.length / denominator;
   }
 
-  // ── Core synthesis ──────────────────────────────────────────────────────
-
-  static List<ArrowModel>? _synthesizeLevel({
-    required Random rng,
-    required _DifficultyParams params,
-    required int levelNumber,
-    required PatternType patternType,
-    required Set<Cell> shapeMask,
-  }) {
-    return ShapePathGenerator.generatePaths(
-      shapeMask: shapeMask,
-      gridSize: params.gridSize,
-      targetDensity: params.targetDensity,
-      levelNumber: levelNumber,
-      minArrowLen: 3,
-      maxArrowLen: params.maxArrowLen,
-      minArrows: params.minArrows,
-      rng: rng,
-    );
-  }
-
   static double boardOccupancy(List<ArrowModel> arrows, int gridSize) {
     final cells = <Cell>{for (final a in arrows) ...a.occupiedCells};
     return cells.length / (gridSize * gridSize);
   }
 
-  // ── Quality gate ─────────────────────────────────────────────────────────
+  // ── Validity and quality ──────────────────────────────────────────────────
+
+  /// Well-formed paths of 3+ cells, inside the grid, no overlaps, unique ids.
+  static bool _isValidBoard(List<ArrowModel> arrows, int gridSize) {
+    final seen = <Cell>{};
+    final ids = <String>{};
+    for (final a in arrows) {
+      if (!ids.add(a.id)) return false;
+      if (!a.hasValidPath || a.length < 3) return false;
+      if (!LevelSolver.isWithinGrid(a, gridSize)) return false;
+      for (final cell in a.occupiedCells) {
+        if (!seen.add(cell)) return false;
+      }
+    }
+    return true;
+  }
 
   static bool _passesQuality(
     List<ArrowModel> arrows,
-    _DifficultyParams params,
-    Set<Cell> shapeMask,
-    int levelNumber, {
-    bool isRelaxed = false,
-  }) {
-    final adaptiveMin = min(params.minArrows, (shapeMask.length / 5.5).floor());
-    if (arrows.length < max(12, adaptiveMin)) return false;
+    PuzzleSpec spec,
+    Set<Cell> mask,
+    int relax,
+  ) {
+    final minArrows = (spec.minArrowsFor(mask.length) * (1 - 0.2 * relax))
+        .floor()
+        .clamp(3, 1 << 20);
+    if (arrows.length < minArrows) return false;
 
-    final minBoardOcc = getMinOccupancyForLevel(levelNumber);
-    final boardOcc = boardOccupancy(arrows, params.gridSize);
-    final shapeOcc = density(arrows, params.gridSize, usableMask: shapeMask);
-
-    final occFloor = isRelaxed ? minBoardOcc * 0.5 : minBoardOcc;
-    if (shapeOcc < occFloor && boardOcc < (occFloor * 0.75)) return false;
-
-    if (arrows.any((a) => !a.hasValidPath || a.length < 3)) return false;
+    final occFloor = spec.minOccupancy * (1 - 0.05 * relax);
+    if (density(arrows, spec.gridSize, usableMask: mask) < occFloor) {
+      return false;
+    }
 
     final dirCounts = <ArrowDirection, int>{};
     for (final a in arrows) {
       dirCounts[a.exitDirection] = (dirCounts[a.exitDirection] ?? 0) + 1;
     }
     final dominant = dirCounts.values.fold<int>(0, max);
-    final maxDominant = isRelaxed ? 0.85 : 0.75;
-    if (dominant / arrows.length > maxDominant) return false;
+    if (arrows.length >= 5 && dominant / arrows.length > 0.75 + 0.1 * relax) {
+      return false;
+    }
 
     final totalTurns = arrows.fold<int>(0, (s, a) => s + a.turns);
-    final minBends = isRelaxed
-        ? max(0.1, params.minBends - 0.2)
-        : params.minBends;
-    if (totalTurns / arrows.length < minBends) return false;
+    if (totalTurns / arrows.length < spec.minAvgBends - 0.15 * relax) {
+      return false;
+    }
 
     final metrics = DependencyAnalyzer.analyze(
       arrows,
-      params.gridSize,
-      usableMask: shapeMask,
+      spec.gridSize,
+      usableMask: mask,
     );
+    if (metrics.dependencyDepth < max(1, spec.minDepth - relax)) return false;
 
-    final minDepth = isRelaxed ? max(1, params.minDepth - 1) : params.minDepth;
-    if (metrics.dependencyDepth < minDepth) return false;
-
-    if (!isRelaxed && _hasLargeEmptyRegion(arrows, shapeMask, params.gridSize)) {
-      return false;
-    }
+    if (relax == 0 && _hasLargeEmptyRegion(arrows, mask)) return false;
 
     return true;
   }
 
-  static bool _hasLargeEmptyRegion(
-    List<ArrowModel> arrows,
-    Set<Cell> shapeMask,
-    int size,
+  /// A candidate this close to the targets is accepted without trying more.
+  static const double _goodEnough = 0.45;
+
+  /// Planning floor: enough arrows, enough waves of dependencies, and enough
+  /// arrows blocked at the start; plus a ceiling at full strictness so one
+  /// level never spikes far above its neighbours.
+  static bool _passesPlanning(
+    int arrowCount,
+    ({int rounds, int initiallyFree}) plan,
+    PuzzleSpec spec,
+    int relax,
   ) {
+    if (arrowCount < (spec.arrowFloor * (1 - 0.2 * relax)).floor()) {
+      return false;
+    }
+    final minRounds = max(2, spec.targetRounds.floor() - 1 - relax);
+    if (plan.rounds < minRounds) return false;
+    if (relax == 0 && plan.rounds > spec.targetRounds + 5) return false;
+    final blocked = 1 - plan.initiallyFree / arrowCount;
+    if (blocked < spec.targetBlockedShare - 0.15 - 0.05 * relax) return false;
+    return true;
+  }
+
+  /// How far a candidate is from the curve's targets (0 = exact): planning
+  /// rounds, traps at the start, arrow count, and how completely the arrows
+  /// draw the silhouette (an unfilled picture is penalised).
+  static double _targetDistance(
+    List<ArrowModel> arrows,
+    ({int rounds, int initiallyFree}) plan,
+    PuzzleSpec spec,
+    Set<Cell> mask,
+  ) {
+    final arrowCount = arrows.length;
+    final blocked = 1 - plan.initiallyFree / arrowCount;
+    final roundsOff =
+        (plan.rounds - spec.targetRounds).abs() / spec.targetRounds * 2;
+    final blockedOff = (blocked - spec.targetBlockedShare).abs() * 2.5;
+    final arrowsShort =
+        max(0, spec.arrowFloor - arrowCount) / max(1, spec.arrowFloor);
+    final unfilled = 1 - density(arrows, spec.gridSize, usableMask: mask);
+    return roundsOff + blockedOff + arrowsShort + unfilled * 2;
+  }
+
+  static bool _hasLargeEmptyRegion(List<ArrowModel> arrows, Set<Cell> mask) {
     final used = <Cell>{for (final a in arrows) ...a.occupiedCells};
     final seen = <Cell>{};
-    final maxCluster = max(16, (shapeMask.length * 0.15).ceil());
+    final maxCluster = max(6, (mask.length * 0.15).ceil());
 
-    for (final cell in shapeMask) {
+    for (final cell in mask) {
       if (used.contains(cell) || !seen.add(cell)) continue;
       final queue = [cell];
       var count = 0;
@@ -650,7 +461,7 @@ class LevelGenerator {
         if (count > maxCluster) return true;
         for (final d in const <Cell>[(-1, 0), (1, 0), (0, -1), (0, 1)]) {
           final n = (cur.$1 + d.$1, cur.$2 + d.$2);
-          if (shapeMask.contains(n) && !used.contains(n) && seen.add(n)) {
+          if (mask.contains(n) && !used.contains(n) && seen.add(n)) {
             queue.add(n);
           }
         }

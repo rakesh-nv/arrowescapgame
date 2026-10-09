@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_strings.dart';
+import '../../core/theme/design_tokens.dart';
 import '../../data/models/theme_model.dart';
 import '../../services/economy_service.dart';
+import '../../widgets/app_icon_button.dart';
+import '../../widgets/coin_badge.dart';
+import '../../widgets/game_dialog.dart';
+import '../../widgets/primary_button.dart';
+import '../../widgets/secondary_button.dart';
 import 'themes_controller.dart';
 
 class ThemesScreen extends StatelessWidget {
@@ -14,72 +21,32 @@ class ThemesScreen extends StatelessWidget {
     final economy = Get.find<EconomyService>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FF),
+      backgroundColor: AppColors.backgroundLight,
       body: SafeArea(
         child: Column(
           children: [
             // App bar
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
               child: Row(
                 children: [
-                  GestureDetector(
+                  AppIconButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    tooltip: 'Back',
                     onTap: () => Get.back(),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.07),
-                              blurRadius: 8)
-                        ],
-                      ),
-                      child: const Icon(Icons.arrow_back_ios_new_rounded,
-                          size: 18, color: AppColors.navyDark),
-                    ),
                   ),
                   const Expanded(
                     child: Center(
                       child: Text(
-                        'Themes',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.navyDark,
-                        ),
+                        AppStrings.themes,
+                        style: AppTextStyles.heading,
                       ),
                     ),
                   ),
-                  Obx(() => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.monetization_on_rounded,
-                                color: Colors.white, size: 16),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${economy.coins.value}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
+                  Obx(() => CoinBadge(coins: economy.coins.value, fontSize: 14)),
                 ],
               ),
             ),
@@ -134,28 +101,45 @@ class ThemesScreen extends StatelessWidget {
       controller.selectTheme(theme);
     } else {
       // Show unlock dialog
+      final canAfford = economy.coins.value >= theme.coinsRequired;
       showDialog(
         context: context,
-        builder: (_) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        builder: (_) => GameDialog(
+          icon: const DialogIcon(
+            icon: Icons.palette_rounded,
+            color: AppColors.accentPurple,
+          ),
           title: Text('Unlock ${theme.name}?'),
-          content: Text(
-              'This theme costs ${theme.coinsRequired} coins. You have ${economy.coins.value} coins.'),
-          actions: [
-            TextButton(
-                onPressed: () => Get.back(), child: const Text('Cancel')),
-            TextButton(
-              onPressed: () async {
-                final ok = await controller.unlockTheme(theme);
-                Get.back();
-                if (!ok) {
-                  ScaffoldMessenger.of(Get.context!).showSnackBar(
-                    const SnackBar(content: Text('Not enough coins!')),
-                  );
-                }
-              },
-              child: Text('Unlock (${theme.coinsRequired} coins)'),
+          message: Text(
+            'This theme costs ${theme.coinsRequired} coins. '
+            'You have ${economy.coins.value} coins.',
+          ),
+          children: [
+            PrimaryButton(
+              label: canAfford
+                  ? 'Unlock (${theme.coinsRequired} coins)'
+                  : 'Not enough coins',
+              icon: Icons.lock_open_rounded,
+              gradient: AppGradients.gold,
+              width: double.infinity,
+              onTap: canAfford
+                  ? () async {
+                      final ok = await controller.unlockTheme(theme);
+                      Get.back();
+                      if (!ok) {
+                        ScaffoldMessenger.of(Get.context!).showSnackBar(
+                          const SnackBar(content: Text('Not enough coins!')),
+                        );
+                      }
+                    }
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SecondaryButton(
+              label: AppStrings.cancel,
+              textColor: AppColors.textSecondary,
+              borderColor: AppColors.cardBorder,
+              onTap: () => Get.back(),
             ),
           ],
         ),
