@@ -197,7 +197,7 @@ class ArrowWidgetState extends State<ArrowWidget>
       case ArrowState.removed:
         return Colors.transparent;
       case ArrowState.normal:
-        return theme.arrowColor;
+        return theme.arrowColorFor(widget.arrow.id);
     }
   }
 
@@ -208,8 +208,17 @@ class ArrowWidgetState extends State<ArrowWidget>
 
     final cs = widget.cellSize;
     final color = widget.isBlocker && arrow.state == ArrowState.normal
-        ? Color.lerp(widget.theme.arrowColor, Colors.redAccent, 0.7)!
+        ? Color.lerp(
+            widget.theme.arrowColorFor(arrow.id),
+            Colors.redAccent,
+            0.7,
+          )!
         : _getArrowColor();
+    // Blocked and blocker cues stay one solid colour, head included.
+    final headColor =
+        widget.isBlocker || arrow.state == ArrowState.blocked
+        ? color
+        : widget.theme.headColorFor(color);
     final showGlow = _highlighted;
     final dir = arrow.exitDirection;
 
@@ -247,6 +256,7 @@ class ArrowWidgetState extends State<ArrowWidget>
                   arrow: arrow,
                   cellSize: cs,
                   bodyColor: color,
+                  headColor: headColor,
                   glowColor: widget.isBlocker
                       ? Colors.redAccent
                       : widget.theme.accentColor,

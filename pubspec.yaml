@@ -2,7 +2,7 @@ name: arrowescapegame
 description: "Arrow Escape - A premium mobile puzzle game"
 publish_to: 'none'
 
-version: 1.0.0+9
+version: 1.0.0+11
 
 environment:
   sdk: ^3.12.2
@@ -10,8 +10,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  cupertino_icons: ^1.0.8
 
   # State management & routing
   get: ^4.6.6

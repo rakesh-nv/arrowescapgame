@@ -9,18 +9,53 @@ class StorageService {
   late Box<PlayerProgress> _progressBox;
   late Box<GameSettings> _settingsBox;
   Box? _savedGameBox;
+  Box? _metaBox;
 
   static const String _progressKey = 'player';
   static const String _settingsKey = 'settings';
   static const String _savedGameBoxName = 'saved_game';
+  static const String _metaBoxName = 'app_meta';
 
   // In-memory fallback for test environments or before Hive box opens
   final Map<String, dynamic> _inMemorySavedGames = {};
+  final Map<String, dynamic> _inMemoryMeta = {};
 
   Future<void> init() async {
     _progressBox = await Hive.openBox<PlayerProgress>(AppConstants.progressBox);
     _settingsBox = await Hive.openBox<GameSettings>(AppConstants.settingsBox);
     _savedGameBox = await Hive.openBox(_savedGameBoxName);
+    try {
+      _metaBox = await Hive.openBox(_metaBoxName);
+    } catch (_) {
+      // Non-critical app state (update prompts); memory is enough.
+    }
+  }
+
+  // ── App metadata ──────────────────────────────────────────────────────────
+  // Small untyped values that are not player progress (for example, which
+  // app update the player postponed). Survives "Reset Progress".
+
+  Object? getMeta(String key) {
+    final box = _metaBox;
+    if (box != null && box.isOpen) return box.get(key);
+    return _inMemoryMeta[key];
+  }
+
+  Future<void> setMeta(String key, Object? value) async {
+    final box = _metaBox;
+    if (value == null) {
+      if (box != null && box.isOpen) {
+        await box.delete(key);
+      } else {
+        _inMemoryMeta.remove(key);
+      }
+      return;
+    }
+    if (box != null && box.isOpen) {
+      await box.put(key, value);
+    } else {
+      _inMemoryMeta[key] = value;
+    }
   }
 
   // ── Player Progress ───────────────────────────────────────────────────────

@@ -128,6 +128,9 @@ class ArrowPainter extends CustomPainter {
   final ArrowModel arrow;
   final double cellSize;
   final Color bodyColor;
+
+  /// Arrowhead colour; [bodyColor] when null.
+  final Color? headColor;
   final Color glowColor;
   final bool showGlow;
   final double opacity;
@@ -143,6 +146,7 @@ class ArrowPainter extends CustomPainter {
     required this.arrow,
     required this.cellSize,
     required this.bodyColor,
+    this.headColor,
     required this.glowColor,
     this.showGlow = false,
     this.opacity = 1.0,
@@ -225,7 +229,7 @@ class ArrowPainter extends CustomPainter {
       tip: tip,
       direction: headDirection,
       headSize: headSize,
-      color: bodyColor.withValues(alpha: opacity),
+      color: (headColor ?? bodyColor).withValues(alpha: opacity),
     );
 
     canvas.restore();
@@ -266,6 +270,7 @@ class ArrowPainter extends CustomPainter {
   @override
   bool shouldRepaint(ArrowPainter oldDelegate) {
     return oldDelegate.bodyColor != bodyColor ||
+        oldDelegate.headColor != headColor ||
         oldDelegate.showGlow != showGlow ||
         oldDelegate.opacity != opacity ||
         oldDelegate.snakeProgress != snakeProgress ||

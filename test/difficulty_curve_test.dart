@@ -15,9 +15,48 @@ void main() {
     expect(specs.first.targetCells, greaterThanOrEqualTo(350));
     expect(specs.last.targetCells, greaterThan(specs.first.targetCells * 3));
     expect(specs.last.targetCells, greaterThanOrEqualTo(1200));
-    // Nominal size; each picture's own board is capped at maxGridSize.
+    // Nominal size; each picture's own board is capped per level.
     expect(specs.last.gridSize, greaterThan(specs.first.gridSize));
-    expect(specs.last.gridSize, lessThanOrEqualTo(AppConstants.maxGridSize));
+    expect(specs.last.gridSize,
+        lessThanOrEqualTo(AppConstants.finalMaxGridSize));
+  });
+
+  test('classic levels keep their caps; the extended campaign grows', () {
+    final classic = specs[AppConstants.classicLevels - 1];
+    for (var n = 1; n <= AppConstants.classicLevels; n++) {
+      expect(specs[n - 1].maxGridSize, AppConstants.maxGridSize,
+          reason: 'level $n');
+    }
+    expect(specs.last.maxGridSize, AppConstants.finalMaxGridSize);
+    for (var i = AppConstants.classicLevels; i < specs.length; i++) {
+      expect(specs[i].maxGridSize,
+          greaterThanOrEqualTo(specs[i - 1].maxGridSize),
+          reason: 'level ${i + 1}');
+    }
+    // Significantly bigger: about three times the playable picture of
+    // level 200, with twice the arrows and ~1.6x the planning waves.
+    expect(specs.last.targetCells, greaterThan(classic.targetCells * 2.5));
+    expect(specs.last.arrowFloor, greaterThan(classic.arrowFloor * 2));
+    expect(specs.last.targetRounds, greaterThan(classic.targetRounds * 1.5));
+  });
+
+  test('new shapes only appear after the classic campaign, and all appear',
+      () {
+    final extended = {
+      for (final s in SilhouetteLibrary.all)
+        if (s.minLevel > AppConstants.classicLevels) s.id,
+    };
+    expect(extended.length, greaterThanOrEqualTo(40));
+    final usedLate = <String>{};
+    for (var n = 1; n <= AppConstants.totalLevels; n++) {
+      final id = DifficultyCurve.silhouetteForLevel(n).id;
+      if (n <= AppConstants.classicLevels) {
+        expect(extended, isNot(contains(id)), reason: 'level $n');
+      } else {
+        usedLate.add(id);
+      }
+    }
+    expect(usedLate, containsAll(extended));
   });
 
   test('level 1 already asks for real planning', () {
@@ -116,7 +155,11 @@ void main() {
 
   test('detailed silhouettes join as boards grow; every one is used', () {
     final first = DifficultyCurve.silhouettePoolFor(specs.first.gridSize);
-    final last = DifficultyCurve.silhouettePoolFor(specs.last.gridSize);
+    final last = DifficultyCurve.silhouettePoolFor(
+      specs.last.gridSize,
+      maxGrid: specs.last.maxGridSize,
+      level: AppConstants.totalLevels,
+    );
     expect(first.length, greaterThanOrEqualTo(20));
     expect(last.length, SilhouetteLibrary.all.length);
     expect(last.length, greaterThan(first.length));

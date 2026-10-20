@@ -128,6 +128,11 @@ class Silhouette {
   /// Whether the shape may be mirrored left↔right for variety.
   final bool mirrorable;
 
+  /// First campaign level whose rotation may pick this shape. Shapes added
+  /// after a campaign shipped start past its last level, so the boards of
+  /// existing levels (and saved games on them) never change.
+  final int minLevel;
+
   /// Drawing operations applied in order; [Cut] parts erase.
   final List<SilPart> parts;
 
@@ -138,6 +143,7 @@ class Silhouette {
     required this.minGrid,
     required this.parts,
     this.mirrorable = true,
+    this.minLevel = 1,
   });
 
   bool contains(double x, double y) {

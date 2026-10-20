@@ -51,6 +51,11 @@ class PuzzleSpec {
   /// (see [DifficultyCurve.gridFor]); 0 means "use [gridSize] as is".
   final int targetCells;
 
+  /// Largest board this level's picture may be drawn on (see
+  /// [DifficultyCurve.gridFor]). Frozen at [AppConstants.maxGridSize] for the
+  /// classic levels; grows towards [AppConstants.finalMaxGridSize] after.
+  final int maxGridSize;
+
   const PuzzleSpec({
     required this.gridSize,
     required this.fill,
@@ -65,6 +70,7 @@ class PuzzleSpec {
     this.targetBlockedShare = 0.55,
     this.arrowFloor = 4,
     this.targetCells = 0,
+    this.maxGridSize = AppConstants.maxGridSize,
   });
 
   /// Same parameters on a different board size (tests and tools).
@@ -81,6 +87,7 @@ class PuzzleSpec {
     targetRounds: targetRounds,
     targetBlockedShare: targetBlockedShare,
     arrowFloor: arrowFloor,
+    maxGridSize: max(maxGridSize, size),
   );
 
   /// Fewest arrows a board built on [maskCells] usable cells may have.
@@ -144,6 +151,7 @@ class _Key {
   final double blocked;
   final double arrows;
   final double cells;
+  final double maxGrid;
 
   const _Key(
     this.level,
@@ -158,8 +166,9 @@ class _Key {
     this.rounds,
     this.blocked,
     this.arrows,
-    this.cells,
-  );
+    this.cells, [
+    this.maxGrid = AppConstants.maxGridSize + 0.0,
+  ]);
 }
 
 /// The single source of truth for how the campaign gets harder.
@@ -178,7 +187,7 @@ class DifficultyCurve {
 
   // Columns: level, nominal grid, fill, avgLen, maxTierLen, absorbCap, bends,
   // depth, minOcc, planning rounds, blocked-at-start share, arrow floor,
-  // playable silhouette cells.
+  // playable silhouette cells, and (optional) the largest board allowed.
   //
   // Level 1 already offers ~380 playable cells (a 31×31 board for a cat):
   // ~43 arrows averaging ~9 cells, the longest ~18, in 6–7 waves of
@@ -190,6 +199,12 @@ class DifficultyCurve {
   // (real boards wind more). Thin strokes (about a fifth of a cell) keep
   // these dense boards readable. The nominal grid gates detailed
   // silhouettes (bicycle, castle…) so new pictures keep joining.
+  //
+  // Levels 1–200 are the classic campaign and their rows must never change
+  // (see AppConstants.classicLevels). Past 200 the curve keeps climbing to
+  // level 1,000: pictures of ~3,750 playable cells on boards up to 96×96,
+  // ~190+ arrows averaging ~19 cells (the longest 60–100), and twice the
+  // planning waves of level 200.
   static const List<_Key> _keys = [
     _Key(1, 26, 0.94, 8.0, 14, 24, 3.4, 4, 0.88, 5.5, 0.56, 38, 380),
     _Key(15, 28, 0.94, 8.6, 16, 28, 3.6, 5, 0.88, 6.0, 0.58, 42, 440),
@@ -200,9 +215,34 @@ class DifficultyCurve {
     _Key(140, 44, 0.96, 12.8, 28, 58, 5.1, 7, 0.90, 10.2, 0.68, 70, 960),
     _Key(170, 48, 0.97, 13.8, 31, 64, 5.4, 8, 0.90, 11.2, 0.70, 76, 1100),
     _Key(200, 52, 0.97, 14.6, 34, 70, 5.7, 8, 0.90, 12.0, 0.72, 82, 1240),
+    // ── Extended campaign (201–1,000) ──
+    // Arrow floors and planning rounds are calibrated to what full-quality
+    // boards of this size actually reach with the longer arrows.
+    _Key(260, 56, 0.97, 15.2, 36, 74, 5.9, 9, 0.90, 13.0, 0.73, 84, 1450, 66),
+    _Key(350, 61, 0.97, 15.8, 38, 78, 6.1, 9, 0.90, 14.0, 0.74, 94, 1750, 72),
+    _Key(450, 66, 0.97, 16.4, 40, 82, 6.3, 10, 0.90, 15.0, 0.75, 106, 2050, 78),
+    _Key(575, 71, 0.97, 17.0, 42, 86, 6.5, 11, 0.90, 16.0, 0.76, 120, 2450, 84),
+    _Key(700, 76, 0.97, 17.6, 44, 90, 6.7, 12, 0.90, 17.0, 0.77, 135, 2850, 88),
+    _Key(850, 81, 0.97, 18.2, 46, 95, 6.9, 13, 0.90, 18.0, 0.78, 150, 3300, 92),
+    _Key(
+      1000,
+      86,
+      0.97,
+      18.8,
+      48,
+      100,
+      7.1,
+      14,
+      0.90,
+      19.0,
+      0.79,
+      165,
+      3750,
+      96,
+    ),
   ];
 
-  static const List<(String, Difficulty)> _worldDefs = [
+  static final List<(String, Difficulty)> _worldDefs = [
     (AppStrings.world1, Difficulty.easy),
     (AppStrings.world2, Difficulty.normal),
     (AppStrings.world3, Difficulty.normal),
@@ -211,6 +251,7 @@ class DifficultyCurve {
     (AppStrings.world6, Difficulty.expert),
     (AppStrings.world7, Difficulty.expert),
     (AppStrings.world8, Difficulty.extreme),
+    for (final name in AppStrings.extendedWorlds) (name, Difficulty.extreme),
   ];
 
   /// Campaign worlds, [AppConstants.levelsPerWorld] levels each.
@@ -258,6 +299,7 @@ class DifficultyCurve {
       targetBlockedShare: lerp(a.blocked, b.blocked),
       arrowFloor: lerp(a.arrows, b.arrows).round(),
       targetCells: lerp(a.cells, b.cells).round(),
+      maxGridSize: lerp(a.maxGrid, b.maxGrid).round(),
     );
   }
 
@@ -287,6 +329,7 @@ class DifficultyCurve {
       targetBlockedShare: spec.targetBlockedShare,
       arrowFloor: spec.arrowFloor,
       targetCells: spec.targetCells,
+      maxGridSize: spec.maxGridSize,
     );
   }
 
@@ -297,15 +340,41 @@ class DifficultyCurve {
   /// motorcycle, castle…) join as boards grow, and slim pictures that could
   /// not offer enough playable cells even on the largest board retire from
   /// the dense late levels, so the cast keeps changing through the campaign.
+  ///
+  /// [maxGrid] is the largest board the level allows and [level] the campaign
+  /// level asking: shapes whose `minLevel` is later stay out. The defaults
+  /// describe the classic campaign, so classic levels and daily boards see
+  /// exactly the pool they always had.
   static List<Silhouette> silhouettePoolFor(
     int gridSize, {
     int targetCells = 0,
+    int maxGrid = AppConstants.maxGridSize,
+    int level = 1,
   }) => [
     for (final s in SilhouetteLibrary.all)
-      if (s.minGrid <= gridSize &&
-          areaAt(s, AppConstants.maxGridSize) >= targetCells * 0.75)
+      if (s.minLevel <= level &&
+          s.minGrid <= gridSize &&
+          _poolArea(s, maxGrid) >= targetCells * _minAreaShare(maxGrid))
         s,
   ];
+
+  /// Share of the target area a shape must reach to join the pool. The
+  /// extended campaign asks more, so slim pictures capped by the board do not
+  /// make a level suddenly smaller than its neighbours.
+  static double _minAreaShare(int maxGrid) =>
+      maxGrid > AppConstants.maxGridSize ? 0.85 : 0.75;
+
+  /// Playable cells [s] offers at the cap [maxGrid], for the pool filter.
+  /// Exact up to the classic cap; above it, scaled from the classic cap's
+  /// measurement (area grows with the square of the board), because
+  /// rasterizing every shape at every larger cap made walking the rotation
+  /// to level 1,000 take tens of seconds in each fresh isolate.
+  static int _poolArea(Silhouette s, int maxGrid) {
+    const ref = AppConstants.maxGridSize;
+    if (maxGrid <= ref) return areaAt(s, maxGrid);
+    final scale = maxGrid / ref;
+    return (areaAt(s, ref) * scale * scale).round();
+  }
 
   static final Map<String, double> _shareMemo = {};
   static final Map<(String, int), int> _areaMemo = {};
@@ -326,11 +395,12 @@ class DifficultyCurve {
   /// offers `spec.targetCells` playable cells, so every level gives a similar
   /// amount of puzzle whatever its shape. A compact picture (castle) therefore
   /// gets a smaller board with bigger cells, a slim one (airplane) a larger
-  /// board. Never below 18×18, the shape's own minimum, or above the cap.
+  /// board. Never below 18×18, the shape's own minimum, or above the level's
+  /// cap ([PuzzleSpec.maxGridSize]).
   static int gridFor(PuzzleSpec spec, Silhouette s) {
     if (spec.targetCells <= 0) return spec.gridSize;
     final lo = max(18, s.minGrid);
-    const hi = AppConstants.maxGridSize;
+    final hi = max(lo, spec.maxGridSize);
     // Start from the area-share estimate, then step to the exact size.
     var g = sqrt(spec.targetCells / areaShare(s)).round().clamp(lo, hi);
     while (g < hi && areaAt(s, g) < spec.targetCells) {
@@ -372,6 +442,8 @@ class DifficultyCurve {
       final pool = silhouettePoolFor(
         spec.gridSize,
         targetCells: spec.targetCells,
+        maxGrid: spec.maxGridSize,
+        level: n,
       );
       final known = [
         for (final s in pool)

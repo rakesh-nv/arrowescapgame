@@ -1,283 +1,422 @@
-import 'package:flutter/material.dart';
-import '../../../core/constants/app_colors.dart';
+import 'dart:math' as math;
 
-class LevelMapNode extends StatefulWidget {
+import 'package:flutter/material.dart';
+
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_strings.dart';
+import '../../../widgets/pressable_scale.dart';
+import '../level_select_controller.dart';
+
+/// One level medallion on the map.
+///
+/// The widget is [width]×[height] with the medallion centred at
+/// ([width]/2, [centerY]); place it with that anchor. Only the current
+/// level listens to [pulse], so idle nodes never rebuild per frame.
+class LevelMapNode extends StatelessWidget {
+  static const double width = 92;
+  static const double height = 112;
+  static const double centerY = 52;
+
   final int levelNumber;
+  final MapNodeState state;
   final int stars;
-  final bool isUnlocked;
-  final bool isCurrent;
-  final bool isCompleted;
   final bool isBoss;
   final bool isChallenge;
-  final double scaleOverride;
-  final bool showGlow;
+  final bool darkGround;
+
+  /// Looping 0→1 animation for the current level's halo.
+  final Animation<double>? pulse;
+
+  /// Extra scale used by the progression animation.
+  final double scale;
+
+  /// 0→1 burst ring shown when a level was just completed or unlocked.
+  final double burst;
+
   final VoidCallback onTap;
 
   const LevelMapNode({
     super.key,
     required this.levelNumber,
+    required this.state,
     required this.stars,
-    required this.isUnlocked,
-    required this.isCurrent,
-    required this.isCompleted,
     required this.isBoss,
     required this.isChallenge,
-    this.scaleOverride = 1.0,
-    this.showGlow = false,
     required this.onTap,
+    this.darkGround = false,
+    this.pulse,
+    this.scale = 1,
+    this.burst = 0,
   });
 
-  @override
-  State<LevelMapNode> createState() => _LevelMapNodeState();
-}
+  bool get _current => state == MapNodeState.current;
+  bool get _locked => state == MapNodeState.locked;
 
-class _LevelMapNodeState extends State<LevelMapNode>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnim;
+  double get _faceSize =>
+      (isBoss
+          ? 66.0
+          : isChallenge
+          ? 60.0
+          : 54.0) +
+      (_current ? 6 : 0);
 
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-
-    _pulseAnim = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOut,
-      ),
-    );
-
-    if (widget.isCurrent) {
-      _pulseController.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant LevelMapNode oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isCurrent && !_pulseController.isAnimating) {
-      _pulseController.repeat(reverse: true);
-    } else if (!widget.isCurrent && _pulseController.isAnimating) {
-      _pulseController.stop();
-      _pulseController.reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
+  String get _semantics {
+    final kind = isBoss
+        ? '${AppStrings.bossLevel}, '
+        : isChallenge
+        ? '${AppStrings.challengeLevel}, '
+        : '';
+    final status = switch (state) {
+      MapNodeState.locked => AppStrings.worldLocked,
+      MapNodeState.current => AppStrings.play,
+      MapNodeState.available => AppStrings.notCompletedYet,
+      MapNodeState.completed => '$stars of 3 stars',
+    };
+    return '${AppStrings.level} $levelNumber, $kind$status';
   }
 
   @override
   Widget build(BuildContext context) {
-    // Node dimensions
-    final double baseSize = widget.isBoss
-        ? 68.0
-        : widget.isCurrent
-            ? 64.0
-            : widget.isChallenge
-                ? 58.0
-                : 54.0;
+    final size = _faceSize;
+    final (faceColors, edge, textColor) = switch (state) {
+      MapNodeState.completed => (
+        const [Color(0xFFFFE08A), Color(0xFFF5A524)],
+        const Color(0xFFB7791F),
+        const Color(0xFF6B3F00),
+      ),
+      MapNodeState.current => (
+        const [Color(0xFF3B82F6), Color(0xFF6C63FF)],
+        const Color(0xFF1E3A8A),
+        Colors.white,
+      ),
+      MapNodeState.available => (
+        const [Colors.white, Color(0xFFDDE9FF)],
+        const Color(0xFF93C5FD),
+        AppColors.accentBlue,
+      ),
+      MapNodeState.locked =>
+        darkGround
+            ? (
+                const [Color(0xFF52627A), Color(0xFF334155)],
+                const Color(0xFF1E293B),
+                const Color(0xFFCBD5E1),
+              )
+            : (
+                const [Color(0xFFEDF1F7), Color(0xFFC9D3E0)],
+                const Color(0xFF94A3B8),
+                const Color(0xFF64748B),
+              ),
+    };
+    final rim = isBoss
+        ? const Color(0xFFFBBF24)
+        : isChallenge
+        ? const Color(0xFFA855F7)
+        : Colors.white.withValues(alpha: _locked ? 0.7 : 1);
 
-    return Transform.scale(
-      scale: widget.scaleOverride,
-      child: AnimatedBuilder(
-        animation: _pulseController,
-        builder: (context, child) {
-          final scale = widget.isCurrent ? _pulseAnim.value : 1.0;
-          return Transform.scale(
-            scale: scale,
-            child: GestureDetector(
-              onTap: widget.isUnlocked ? widget.onTap : null,
+    final medallion = SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          if (_current && pulse != null)
+            Positioned(
+              top: centerY - size,
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    size: Size(size * 2, size * 2),
+                    painter: _HaloPainter(pulse!, AppColors.accentBlue),
+                  ),
+                ),
+              ),
+            ),
+          if (burst > 0 && burst < 1)
+            Positioned(
+              top: centerY - size,
+              child: IgnorePointer(
+                child: CustomPaint(
+                  size: Size(size * 2, size * 2),
+                  painter: _BurstPainter(burst),
+                ),
+              ),
+            ),
+          // Ground shadow.
+          Positioned(
+            top: centerY + size / 2 - 2,
+            child: Container(
+              width: size * 0.95,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: darkGround ? 0.35 : 0.16),
+                borderRadius: BorderRadius.circular(size),
+              ),
+            ),
+          ),
+          // Raised edge (3D coin side).
+          Positioned(
+            top: centerY - size / 2 + 5,
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(color: edge, shape: BoxShape.circle),
+            ),
+          ),
+          // Face.
+          Positioned(
+            top: centerY - size / 2,
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: faceColors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: rim,
+                  width: isBoss || isChallenge ? 3.5 : 3,
+                ),
+              ),
               child: Stack(
-                clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  // 1. Outer Pulse Glow Ring (for Current Node or completion glow)
-                  if (widget.isCurrent || widget.showGlow)
-                    Container(
-                      width: baseSize + 20,
-                      height: baseSize + 20,
+                  // Gloss.
+                  Positioned(
+                    top: size * 0.08,
+                    child: Container(
+                      width: size * 0.56,
+                      height: size * 0.22,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: (widget.isBoss
-                                ? AppColors.coinGold
-                                : AppColors.accentBlue)
-                            .withOpacity(0.22),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (widget.isBoss
-                                    ? AppColors.coinGold
-                                    : AppColors.accentBlue)
-                                .withOpacity(0.4),
-                            blurRadius: 16,
-                            spreadRadius: 4,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // 2. Main Node Container
-                  Container(
-                    width: baseSize,
-                    height: baseSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: widget.isCurrent
-                          ? (widget.isBoss
-                              ? const LinearGradient(
-                                  colors: [Color(0xFFFBBF24), Color(0xFFD97706)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : AppColors.primaryGradient)
-                          : widget.isCompleted
-                              ? (widget.isBoss
-                                  ? const LinearGradient(
-                                      colors: [Color(0xFFFFFBEB), Color(0xFFFEF3C7)],
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                    )
-                                  : const LinearGradient(
-                                      colors: [Colors.white, Color(0xFFF8FAFC)],
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                    ))
-                              : null,
-                      color: !widget.isUnlocked ? const Color(0xFFE2E8F0) : null,
-                      border: Border.all(
-                        color: widget.isCurrent
-                            ? Colors.white
-                            : widget.isBoss
-                                ? AppColors.coinGold
-                                : widget.isCompleted
-                                    ? AppColors.success
-                                    : widget.isChallenge
-                                        ? AppColors.accentPurple
-                                        : const Color(0xFFCBD5E1),
-                        width: widget.isCurrent || widget.isBoss ? 3.0 : 2.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: widget.isCurrent
-                              ? AppColors.accentBlue.withOpacity(0.35)
-                              : widget.isCompleted
-                                  ? Colors.black.withOpacity(0.08)
-                                  : Colors.black.withOpacity(0.03),
-                          blurRadius: widget.isCurrent ? 12 : 6,
-                          offset: const Offset(0, 3),
+                        color: Colors.white.withValues(
+                          alpha: _locked ? 0.25 : 0.35,
                         ),
-                      ],
-                    ),
-                    child: Center(
-                      child: widget.isUnlocked
-                          ? Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                // Boss Crown/Star icon if boss level
-                                if (widget.isBoss)
-                                  const Icon(
-                                    Icons.emoji_events_rounded,
-                                    size: 16,
-                                    color: AppColors.coinGoldDark,
-                                  ),
-
-                                Text(
-                                  '${widget.levelNumber}',
-                                  style: TextStyle(
-                                    fontSize: widget.isBoss ? 20 : 18,
-                                    fontWeight: FontWeight.w800,
-                                    color: widget.isCurrent
-                                        ? Colors.white
-                                        : AppColors.navyDark,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : const Icon(
-                              Icons.lock_rounded,
-                              size: 20,
-                              color: Color(0xFF94A3B8),
-                            ),
+                        borderRadius: BorderRadius.circular(size),
+                      ),
                     ),
                   ),
-
-                  // 3. Floating "PLAY" Badge above Current Node
-                  if (widget.isCurrent)
-                    Positioned(
-                      top: -24,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF10B981), Color(0xFF059669)],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.success.withOpacity(0.4),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Text(
-                          'PLAY',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
+                  Text(
+                    '$levelNumber',
+                    textScaler: TextScaler.noScaling,
+                    style: TextStyle(
+                      fontSize: levelNumber >= 100 ? 18 : 21,
+                      fontWeight: FontWeight.w900,
+                      color: textColor,
+                      shadows: _current
+                          ? const [
+                              Shadow(
+                                color: Color(0x55000000),
+                                blurRadius: 3,
+                                offset: Offset(0, 1),
+                              ),
+                            ]
+                          : null,
                     ),
-
-                  // 4. Star Rating Badge under Completed Node
-                  if (widget.isCompleted && widget.stars > 0)
-                    Positioned(
-                      bottom: -12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: List.generate(3, (i) {
-                            return Icon(
-                              i < widget.stars
-                                  ? Icons.star_rounded
-                                  : Icons.star_outline_rounded,
-                              color: i < widget.stars
-                                  ? AppColors.starGold
-                                  : AppColors.starEmpty,
-                              size: 11,
-                            );
-                          }),
-                        ),
-                      ),
-                    ),
+                  ),
                 ],
               ),
             ),
-          );
-        },
+          ),
+          if (_locked)
+            Positioned(
+              top: centerY + size / 2 - 18,
+              left: width / 2 + size / 2 - 18,
+              child: _Badge(
+                color: darkGround
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFF64748B),
+                icon: Icons.lock_rounded,
+              ),
+            ),
+          if (isBoss)
+            Positioned(
+              top: centerY - size / 2 - 20,
+              child: Icon(
+                Icons.workspace_premium_rounded,
+                size: 26,
+                color: _locked
+                    ? const Color(0xFFB0BAC8)
+                    : const Color(0xFFFBBF24),
+                shadows: const [
+                  Shadow(
+                    color: Color(0x44000000),
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
+          if (isChallenge && !isBoss)
+            Positioned(
+              top: centerY - size / 2 - 6,
+              left: width / 2 + size / 2 - 16,
+              child: _Badge(
+                color: _locked
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFFA855F7),
+                icon: Icons.bolt_rounded,
+              ),
+            ),
+          if (state == MapNodeState.completed)
+            Positioned(
+              top: centerY + size / 2 + 4,
+              child: _StarRow(stars: stars),
+            ),
+          if (_current)
+            Positioned(top: centerY + size / 2 + 6, child: const _PlayTag()),
+        ],
       ),
     );
+
+    return PressableScale(
+      onTap: onTap,
+      pressedScale: 0.9,
+      semanticLabel: _semantics,
+      child: scale == 1
+          ? medallion
+          : Transform.scale(scale: scale, child: medallion),
+    );
   }
+}
+
+class _Badge extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+
+  const _Badge({required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 22,
+    height: 22,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white, width: 2),
+    ),
+    child: Icon(icon, size: 12, color: Colors.white),
+  );
+}
+
+class _StarRow extends StatelessWidget {
+  final int stars;
+
+  const _StarRow({required this.stars});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    decoration: BoxDecoration(
+      color: const Color(0xCC1A2340),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < 3; i++)
+          Icon(
+            Icons.star_rounded,
+            size: 14,
+            color: i < stars
+                ? AppColors.starGold
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+      ],
+    ),
+  );
+}
+
+class _PlayTag extends StatelessWidget {
+  const _PlayTag();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF10B981), Color(0xFF059669)],
+      ),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white, width: 1.5),
+    ),
+    child: Text(
+      AppStrings.play.toUpperCase(),
+      textScaler: TextScaler.noScaling,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1,
+      ),
+    ),
+  );
+}
+
+/// Expanding ring around the current level.
+class _HaloPainter extends CustomPainter {
+  final Animation<double> pulse;
+  final Color color;
+
+  _HaloPainter(this.pulse, this.color) : super(repaint: pulse);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // The shared ambient loop is long; run the halo many times per loop.
+    final t = (pulse.value * 24) % 1;
+    final c = size.center(Offset.zero);
+    final base = size.width / 4;
+    canvas.drawCircle(
+      c,
+      base * (1.05 + 0.08 * math.sin(t * math.pi * 2)),
+      Paint()..color = color.withValues(alpha: 0.18),
+    );
+    canvas.drawCircle(
+      c,
+      base * (1.0 + 0.9 * t),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = color.withValues(alpha: 0.55 * (1 - t)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HaloPainter old) => old.color != color;
+}
+
+/// Sparkle ring for the progression animation.
+class _BurstPainter extends CustomPainter {
+  final double t;
+
+  _BurstPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final r = size.width / 4 * (1 + t);
+    final fade = 1 - t;
+    canvas.drawCircle(
+      c,
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4 * fade
+        ..color = AppColors.starGold.withValues(alpha: fade),
+    );
+    final dot = Paint()..color = Colors.white.withValues(alpha: fade);
+    for (var i = 0; i < 8; i++) {
+      final a = i * math.pi / 4 + t;
+      canvas.drawCircle(
+        c + Offset(math.cos(a), math.sin(a)) * (r + 6),
+        3 * fade + 1,
+        dot,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BurstPainter old) => old.t != t;
 }

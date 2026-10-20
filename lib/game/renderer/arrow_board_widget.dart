@@ -390,15 +390,29 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                           height: gridPx,
                           child: Stack(
                             children: [
+                              // Theme board panel (only themes that set one)
+                              if (widget.theme.boardColor != null)
+                                Positioned.fill(
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: widget.theme.boardColor,
+                                      borderRadius: BorderRadius.circular(
+                                        cellSize * 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               // Rangoli / Kolam dot grid
                               Positioned.fill(
                                 child: RepaintBoundary(
                                   child: CustomPaint(
+                                    // Static per level: let the engine cache
+                                    // it while the player pans.
+                                    isComplex: true,
                                     painter: _DotGridPainter(
                                       gridSize: widget.gridSize,
                                       cellSize: cellSize,
-                                      dotColor: widget.theme.textColor
-                                          .withValues(alpha: 0.32),
+                                      dotColor: widget.theme.gridDotColor,
                                       shapeCells: widget.shapeCells,
                                     ),
                                   ),
@@ -410,11 +424,13 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                               Positioned.fill(
                                 child: RepaintBoundary(
                                   child: CustomPaint(
+                                    // Up to ~200 long arrows on the largest
+                                    // boards; changes only once per move.
+                                    isComplex: true,
                                     painter: _IdleArrowsPainter(
                                       arrows: idle,
                                       cellSize: cellSize,
-                                      color: widget.theme.arrowColor,
-                                      glowColor: widget.theme.accentColor,
+                                      theme: widget.theme,
                                       pathFor: (a) => _pathFor(a, cellSize),
                                     ),
                                   ),
@@ -516,26 +532,26 @@ class _RecenterChip extends StatelessWidget {
 class _IdleArrowsPainter extends CustomPainter {
   final List<ArrowModel> arrows;
   final double cellSize;
-  final Color color;
-  final Color glowColor;
+  final ThemeModel theme;
   final ArrowMotionPath Function(ArrowModel) pathFor;
 
   _IdleArrowsPainter({
     required this.arrows,
     required this.cellSize,
-    required this.color,
-    required this.glowColor,
+    required this.theme,
     required this.pathFor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final arrow in arrows) {
+      final body = theme.arrowColorFor(arrow.id);
       ArrowPainter(
         arrow: arrow,
         cellSize: cellSize,
-        bodyColor: color,
-        glowColor: glowColor,
+        bodyColor: body,
+        headColor: theme.headColorFor(body),
+        glowColor: theme.accentColor,
         motionPath: pathFor(arrow),
       ).paint(canvas, size);
     }
@@ -544,7 +560,7 @@ class _IdleArrowsPainter extends CustomPainter {
   @override
   bool shouldRepaint(_IdleArrowsPainter old) {
     if (old.cellSize != cellSize ||
-        old.color != color ||
+        old.theme.id != theme.id ||
         old.arrows.length != arrows.length) {
       return true;
     }

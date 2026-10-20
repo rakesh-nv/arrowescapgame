@@ -74,4 +74,7 @@ dependencies {
     // TODO: Add the dependencies for Firebase products you want to use
     // When using the BoM, don't specify versions in Firebase dependencies
     implementation("com.google.firebase:firebase-analytics")
+
+    // Google Play In-App Updates (bridged in InAppUpdateHandler.kt)
+    implementation("com.google.android.play:app-update:2.1.0")
 }

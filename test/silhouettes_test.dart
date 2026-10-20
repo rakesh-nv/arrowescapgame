@@ -19,6 +19,16 @@ const _requested = {
   'planet', 'note', 'diamond', 'face', 'knot', 'starburst', 'spiral',
 };
 
+/// Pictures added with the extended campaign (levels 201+).
+const _extended = {
+  'heart', 'star', 'mandala', 'rangoli_star', 'rangoli_flower', 'maze',
+  'labyrinth', 'snail', 'sun', 'snowflake', 'lotus', 'sunflower', 'tulip',
+  'leaf', 'mushroom', 'cactus', 'apple', 'mountains', 'umbrella', 'anchor',
+  'bell', 'teacup', 'guitar', 'lighthouse', 'diya', 'balloon', 'sailboat',
+  'kite', 'honeycomb', 'chakra', 'infinity', 'paisley', 'whale', 'penguin',
+  'teddy', 'octopus', 'crab', 'peacock', 'duck', 'swan',
+};
+
 /// The board is valid, solvable, and its arrows draw the silhouette.
 void _expectPlayableShape(LevelModel level, String reason) {
   final n = level.gridSize;
@@ -57,6 +67,12 @@ void main() {
     final ids = SilhouetteLibrary.all.map((s) => s.id).toList();
     expect(ids.toSet().length, ids.length);
     expect(ids.toSet(), containsAll(_requested));
+    expect(ids.toSet(), containsAll(_extended));
+    // Classic levels keep their pictures: every added shape starts after them.
+    for (final s in SilhouetteLibrary.all) {
+      expect(s.minLevel > AppConstants.classicLevels, _extended.contains(s.id),
+          reason: s.id);
+    }
     final categories = SilhouetteLibrary.all.map((s) => s.category).toSet();
     expect(categories, containsAll(SilhouetteCategory.values));
     for (final s in SilhouetteLibrary.all) {
@@ -100,6 +116,27 @@ void main() {
                 reason: '$reason loses part ${f.worstPartIndex}');
           }
         }
+      });
+    }
+  });
+
+  group("Pictures stay clean on the extended campaign's larger boards", () {
+    // Boards beyond the classic cap, up to the final 96×96.
+    for (final s in SilhouetteLibrary.all) {
+      test(s.id, () {
+        for (final g in [64, 72, 80, 88, AppConstants.finalMaxGridSize]) {
+          for (final mirror in s.mirrorable ? [false, true] : [false]) {
+            final m = s.rasterize(g, mirror: mirror);
+            final reason = '${s.id} @$g mirror=$mirror';
+            expect(m.droppedCells, lessThanOrEqualTo(m.cells.length ~/ 20),
+                reason: reason);
+            expect(m.cells.length / (g * g), inInclusiveRange(0.15, 0.65),
+                reason: reason);
+          }
+        }
+        final f = s.fidelity(AppConstants.finalMaxGridSize);
+        expect(f.iou, greaterThanOrEqualTo(0.75), reason: s.id);
+        expect(f.worstPart, greaterThanOrEqualTo(0.6), reason: s.id);
       });
     }
   });

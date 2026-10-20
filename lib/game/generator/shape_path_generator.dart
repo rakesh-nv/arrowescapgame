@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_direction.dart';
 import '../../data/models/arrow_model.dart';
 
@@ -205,6 +206,14 @@ class ShapePathGenerator {
       );
     }
 
+    // Extended campaign: detailed pictures (petals, spokes, thin rings) leave
+    // narrow pockets that only 3–4 cell fillers fit. Keep those to a small
+    // share so the big boards stay made of long paths. Removing an arrow only
+    // frees lanes, so the board stays solvable. Classic levels are unchanged.
+    if (levelNumber > AppConstants.classicLevels) {
+      _trimStubs(placedArrows, maxShare: 0.12);
+    }
+
     // Reverse list so arrows[0] is first placed in forward time
     final forwardArrows = <ArrowModel>[];
     for (var i = 0; i < placedArrows.length; i++) {
@@ -218,6 +227,20 @@ class ShapePathGenerator {
     }
 
     return forwardArrows;
+  }
+
+  /// Drops the most recently placed arrows of 4 cells or fewer until they are
+  /// at most [maxShare] of all arrows.
+  static void _trimStubs(List<ArrowModel> arrows, {required double maxShare}) {
+    var stubs = arrows.where((a) => a.length <= 4).length;
+    for (var i = arrows.length - 1;
+        i >= 0 && stubs > (arrows.length * maxShare).floor();
+        i--) {
+      if (arrows[i].length <= 4) {
+        arrows.removeAt(i);
+        stubs--;
+      }
+    }
   }
 
   static List<(LengthTier, int, int)> _buildTargetRequests({
@@ -286,8 +309,12 @@ class ShapePathGenerator {
   static int _minimumCells(Iterable<LengthTier> tiers, int maxTierLen) =>
       tiers.fold<int>(0, (sum, tier) => sum + _rangeFor(tier, maxTierLen).$1);
 
+  /// Largest `maxTierLen` of the classic 200 levels (DifficultyCurve).
+  static const int _classicTopTier = 34;
+
   /// Length range (cells) for [tier]. The table is defined for the full-size
   /// 22-cell top tier and scaled down for smaller boards (never below 3).
+  /// Beyond the classic top tier it stretches up instead.
   static (int, int) _rangeFor(LengthTier tier, int maxTierLen) {
     final base = switch (tier) {
       LengthTier.short     => (4, 7),
@@ -296,6 +323,13 @@ class ShapePathGenerator {
       LengthTier.veryLong  => (13, 16),
       LengthTier.extraLong => (16, 22),
     };
+    // Past the classic campaign's top tier every tier stretches with it, so
+    // arrows keep getting longer through the extended levels. Classic levels
+    // (maxTierLen <= 34) keep exactly the table above.
+    if (maxTierLen > _classicTopTier) {
+      final scale = maxTierLen / _classicTopTier;
+      return ((base.$1 * scale).round(), (base.$2 * scale).round());
+    }
     if (maxTierLen >= 22) return base;
     final scale = maxTierLen / 22.0;
     final lo = max(3, (base.$1 * scale).round());

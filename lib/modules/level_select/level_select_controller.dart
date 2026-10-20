@@ -1,7 +1,26 @@
-import 'dart:math' as math;
 import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/repositories/progress_repository.dart';
+import '../../game/config/difficulty_curve.dart';
+
+/// What a level node on the map shows.
+enum MapNodeState {
+  /// Not reachable yet.
+  locked,
+
+  /// Unlocked but neither completed nor the frontier level.
+  available,
+
+  /// The furthest unlocked, not yet completed level.
+  current,
+
+  /// Completed at least once (stars are shown).
+  completed,
+}
+
+/// Trophy earned by clearing a whole world. Display only: it never awards
+/// currency.
+enum WorldTrophy { none, bronze, gold }
 
 class LevelSelectController extends GetxController {
   final ProgressRepository _progress = Get.find<ProgressRepository>();
@@ -12,6 +31,9 @@ class LevelSelectController extends GetxController {
 
   final RxInt totalStarsCount = 0.obs;
 
+  /// Bumped whenever progress changes so the map can rebuild.
+  final RxInt progressVersion = 0.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -20,6 +42,7 @@ class LevelSelectController extends GetxController {
 
   void refreshProgress() {
     totalStarsCount.value = _progress.progress.totalStars;
+    progressVersion.value++;
   }
 
   int get highestUnlocked => _progress.progress.highestUnlockedLevel;
@@ -36,40 +59,57 @@ class LevelSelectController extends GetxController {
   bool isBossLevel(int level) => level % 10 == 0;
   bool isChallengeLevel(int level) => level % 5 == 0 && !isBossLevel(level);
 
+  /// Map state of [level]. Unlocking always comes from saved progress; the
+  /// map never unlocks anything itself.
+  MapNodeState nodeState(int level) {
+    if (level < 1 || level > totalLevels || !isUnlocked(level)) {
+      return MapNodeState.locked;
+    }
+    if (isCompleted(level)) return MapNodeState.completed;
+    if (isCurrent(level)) return MapNodeState.current;
+    return MapNodeState.available;
+  }
+
+  /// Level the map focuses on when it opens: the frontier level, or the
+  /// last level once the campaign is finished.
+  int get focusLevel => highestUnlocked.clamp(1, totalLevels);
+
+  bool get isCampaignComplete => isCompleted(totalLevels);
+
+  int _lastLevelOf(CampaignWorld w) =>
+      w.lastLevel > totalLevels ? totalLevels : w.lastLevel;
+
+  int worldLevelCount(CampaignWorld w) => _lastLevelOf(w) - w.firstLevel + 1;
+
+  bool isWorldUnlocked(CampaignWorld w) => w.firstLevel <= highestUnlocked;
+
+  int worldClearedCount(CampaignWorld w) {
+    var n = 0;
+    for (var l = w.firstLevel; l <= _lastLevelOf(w); l++) {
+      if (isCompleted(l)) n++;
+    }
+    return n;
+  }
+
+  int worldStars(CampaignWorld w) {
+    var n = 0;
+    for (var l = w.firstLevel; l <= _lastLevelOf(w); l++) {
+      n += starsForLevel(l);
+    }
+    return n;
+  }
+
+  WorldTrophy worldTrophy(CampaignWorld w) {
+    final count = worldLevelCount(w);
+    if (count <= 0 || worldClearedCount(w) < count) return WorldTrophy.none;
+    return worldStars(w) >= count * 3 ? WorldTrophy.gold : WorldTrophy.bronze;
+  }
+
   /// Called when a level is completed to flag it for progression animation.
   static void recordLevelCompletion(int level) {
     justCompletedLevel.value = level;
     if (Get.isRegistered<LevelSelectController>()) {
       Get.find<LevelSelectController>().refreshProgress();
     }
-  }
-
-  /// Calculates node center X along the winding path.
-  double getNodeX(int level, double screenWidth) {
-    final centerX = screenWidth / 2;
-    final maxAmp = (screenWidth * 0.28).clamp(70.0, 140.0);
-    final i = level - 1;
-    final offset = math.sin(i * 0.48) * 0.75 + math.sin(i * 0.18) * 0.25;
-    return centerX + offset * maxAmp;
-  }
-
-  /// Calculates node center Y relative to total map height (bottom to top).
-  double getNodeY(
-      int level, double totalHeight, double rowHeight, double paddingBottom) {
-    return totalHeight - paddingBottom - (level - 0.5) * rowHeight;
-  }
-
-  /// Calculates scroll offset to center a specific level in the viewport.
-  double getScrollOffsetForLevel(
-    int level,
-    double totalHeight,
-    double rowHeight,
-    double paddingBottom,
-    double viewportHeight,
-    double maxScroll,
-  ) {
-    final y = getNodeY(level, totalHeight, rowHeight, paddingBottom);
-    final target = y - (viewportHeight / 2);
-    return target.clamp(0.0, maxScroll);
   }
 }

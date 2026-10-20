@@ -158,7 +158,15 @@ void main() {
         expect(level.levelNumber, n, reason: reason);
         // Board size follows the picture so each level offers its target area.
         expect(level.gridSize, LevelGenerator.gridForLevel(n), reason: reason);
-        expect(level.gridSize, inInclusiveRange(16, AppConstants.maxGridSize),
+        // Classic levels keep their original cap; the extended campaign
+        // grows towards the final board size.
+        expect(
+            level.gridSize,
+            inInclusiveRange(
+                16,
+                n <= AppConstants.classicLevels
+                    ? AppConstants.maxGridSize
+                    : AppConstants.finalMaxGridSize),
             reason: reason);
         expect(level.difficulty, DifficultyCurve.worldFor(n).difficulty,
             reason: reason);
@@ -198,10 +206,15 @@ void main() {
         expect(filled / level.shapeCells.length, greaterThanOrEqualTo(0.85),
             reason: '$reason fill');
         // The whole picture fits a small phone before any zoom: a 60-cell-wide
-        // picture gets ~5.8 dp cells. Taps that straddle thin arrows magnify
-        // the board first, so small cells never cost a life.
+        // picture gets ~5.8 dp cells, the 96-cell boards of the last levels
+        // ~3.6 dp (an overview to zoom into). Taps that straddle thin arrows
+        // magnify the board first, so small cells never cost a life.
         final cell = _onScreenCell(level);
-        expect(cell, greaterThanOrEqualTo(5.5), reason: '$reason cell size');
+        expect(
+            cell,
+            greaterThanOrEqualTo(
+                n <= AppConstants.classicLevels ? 5.5 : 3.4),
+            reason: '$reason cell size');
         minCell = min(minCell, cell);
 
         // No sudden spikes or drops between neighbouring levels.
@@ -264,14 +277,21 @@ void main() {
       }
 
       // Playable area, arrow length, turns and the overall complexity rise
-      // every single world: difficulty is not only "more arrows".
-      for (var i = 1; i < means.length; i++) {
-        for (final (index, name) in [
-          (8, 'playable area'),
-          (2, 'avg length'),
-          (3, 'bends'),
-          (7, 'complexity score'),
-        ]) {
+      // every single world of the classic campaign: difficulty is not only
+      // "more arrows". The 32 worlds of the extended campaign take smaller
+      // steps each, so picture-to-picture variety can make neighbouring
+      // worlds tie; there they must rise from every block of four worlds
+      // (100 levels) to the next, starting above the last classic world.
+      const rising = [
+        (8, 'playable area'),
+        (2, 'avg length'),
+        (3, 'bends'),
+        (7, 'complexity score'),
+      ];
+      const classicWorlds =
+          AppConstants.classicLevels ~/ AppConstants.levelsPerWorld;
+      for (var i = 1; i < classicWorlds; i++) {
+        for (final (index, name) in rising) {
           expect(
             means[i][index],
             greaterThan(means[i - 1][index]),
@@ -279,6 +299,22 @@ void main() {
                 'to ${worlds[i]}',
           );
         }
+      }
+      List<double> blockMean(int first) => [
+            for (var k = 0; k < means.first.length; k++)
+              means.skip(first).take(4).fold<double>(0, (s, m) => s + m[k]) / 4,
+          ];
+      var previous = means[classicWorlds - 1];
+      for (var first = classicWorlds; first + 4 <= means.length; first += 4) {
+        final block = blockMean(first);
+        for (final (index, name) in rising) {
+          expect(
+            block[index],
+            greaterThan(previous[index]),
+            reason: '$name should rise into worlds ${first + 1}-${first + 4}',
+          );
+        }
+        previous = block;
       }
       // Dependency depth (planning) is higher in the second half.
       final half = means.length ~/ 2;
@@ -296,7 +332,7 @@ void main() {
         expect(means.last[i], greaterThan(means.first[i]));
       }
     },
-    timeout: const Timeout(Duration(minutes: 10)),
+    timeout: const Timeout(Duration(minutes: 40)),
   );
 
   test('Early levels are large picture puzzles, yet fair', () {

@@ -8,7 +8,9 @@ import '../../widgets/app_icon_button.dart';
 import '../../widgets/game_dialog.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/secondary_button.dart';
+import '../../services/update/update_service.dart';
 import '../gameplay/widgets/tutorial_overlay.dart';
+import '../update/update_prompts.dart';
 import 'settings_controller.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -16,6 +18,10 @@ class SettingsScreen extends StatelessWidget {
 
   static const _privacyUrl =
       'https://smooth-hyacinth-f03.notion.site/Privacy-Policy-for-Arrow-Escape-3d64cd92f5a880b18f15dcc5840c7380';
+
+  static bool get _updatesSupported =>
+      Get.isRegistered<UpdateService>() &&
+      Get.find<UpdateService>().isSupported;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +107,20 @@ class SettingsScreen extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (_updatesSupported) ...[
+                          const _SectionHeader('APP'),
+                          _SettingsCard(
+                            children: [
+                              _ActionTile(
+                                icon: Icons.system_update_rounded,
+                                color: AppColors.success,
+                                title: AppStrings.checkForUpdates,
+                                subtitle: 'Get the latest version from Google Play',
+                                onTap: UpdatePrompts.checkFromSettings,
+                              ),
+                            ],
+                          ),
+                        ],
                         const _SectionHeader('DATA'),
                         _SettingsCard(
                           children: [

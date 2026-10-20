@@ -16,6 +16,8 @@ import 'economy_service.dart';
 import 'haptic_service.dart';
 import 'purchase_service.dart';
 import 'storage_service.dart';
+import 'update/update_platform.dart';
+import 'update/update_service.dart';
 
 enum InitStep {
   starting,
@@ -110,6 +112,7 @@ class AppInitializationService {
         ),
       );
       await initializeAds();
+      initializeUpdates(storageService);
 
       // 5. Level System & Initial Level Preparation (Critical/Core)
       onProgress(
@@ -225,6 +228,24 @@ class AppInitializationService {
     if (!Get.isRegistered<IAnalyticsService>()) {
       Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);
     }
+  }
+
+  /// Registers the in-app update service. Only wiring happens here; the
+  /// network check runs later from Home, so startup never waits on Play.
+  static void initializeUpdates(StorageService storageService) {
+    if (Get.isRegistered<UpdateService>()) return;
+    final UpdatePlatform platform;
+    if (!kIsWeb &&
+        Platform.isAndroid &&
+        !Platform.environment.containsKey('FLUTTER_TEST')) {
+      platform = PlayUpdatePlatform();
+    } else {
+      platform = NoOpUpdatePlatform();
+    }
+    Get.put<UpdateService>(
+      UpdateService(platform, storageService),
+      permanent: true,
+    );
   }
 
   static Future<void> initializeLevelSystem() async {
