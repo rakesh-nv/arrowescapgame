@@ -1,0 +1,48 @@
+Tap an arrow and it slides off the board along its own path. Sounds easy, until the arrows start blocking each other.
+
+Arrow Escape is a minimalist logic puzzle about order. Every board is a maze of bent, winding arrows. An arrow can only escape if the lane in front of its head is clear all the way to the edge. Find the arrows that are free, clear them, and open the way for the next ones. Tap a blocked arrow and you lose a life, so think before you tap.
+
+★ EASY TO LEARN, HARD TO MASTER
+• One simple rule: tap an arrow whose path is clear
+• Long, twisting arrows that wind through the whole maze
+• Puzzles grow bigger, denser and trickier as you progress
+• Plan several moves ahead to untangle the hardest boards
+• Every level is checked by a solver, so every puzzle can be solved
+
+★ 1,000 LEVELS ACROSS 40 WORLDS
+• A long campaign that starts gentle and builds to expert-level challenges
+• Each world has 25 levels, with challenge and boss levels along the way
+• Earn up to 3 stars per level by clearing it with as few mistakes as possible
+• Earn a world trophy, and upgrade it to gold with 3 stars on every level
+
+★ A NEW ADVENTURE MAP
+• Follow a winding trail through 40 hand-styled regions
+• Travel from Green Forest and Desert Canyon to Frozen Mountains, Neon City, Crystal Caverns and beyond
+• See your progress at a glance and jump back to your current level in one tap
+
+★ EVERY PUZZLE IS A PICTURE
+• Arrows fill shapes like cats, rockets, castles, crowns, hearts, flowers, mandalas and mazes
+• Dozens of different shapes keep every board fresh
+
+★ HELPFUL TOOLS
+• Hints point out an arrow that can escape right now
+• Undo your last moves and try another route
+• Restart any level whenever you like
+• Pinch to zoom and drag to pan on larger boards
+
+★ DAILY CHALLENGE
+• A new puzzle every day
+• Keep your streak alive and earn bonus coins
+
+★ 43 THEMES TO COLLECT
+• Start with Classic and Ocean, then unlock 41 more with the coins you earn
+• Choose from Nature, Ocean, Space, Elements, Landscapes, Patterns and more
+
+★ PLAY ANYWHERE
+• No internet connection needed to play
+• Your progress saves automatically, so you can continue a level where you left off
+• Sound effects and haptics can be switched on or off in Settings
+
+Clean design, satisfying moves and a puzzle that keeps getting smarter. If you enjoy logic games, maze puzzles and brain teasers, Arrow Escape is ready when you are.
+
+Can you clear all 1,000 levels? Download Arrow Escape and find out!

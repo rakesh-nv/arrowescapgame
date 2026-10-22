@@ -1,0 +1,1 @@
+Tap arrows in the right order to clear the maze. 1,000 levels, easy to learn!
