@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
+import 'services/analytics_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +57,7 @@ class ArrowEscapeApp extends StatelessWidget {
       initialRoute: AppPages.initial,
       getPages: AppPages.routes,
       defaultTransition: Transition.fade,
+      navigatorObservers: [AnalyticsRouteObserver()],
       // Honour the system font size, but cap it so fixed game layouts
       // (HUD, board controls) never overflow.
       builder: (context, child) {

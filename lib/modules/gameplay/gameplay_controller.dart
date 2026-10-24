@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:get/get.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
@@ -76,6 +77,31 @@ class GameplayController extends GetxController {
   /// replaced (undo, reset, level load, dispose) so it cannot act on stale state.
   Timer? _escapeTimer;
 
+  // ── Analytics ─────────────────────────────────────────────────────────────
+  /// Attempts per level in this app run, for `attempt_number`.
+  static final Map<String, int> _attemptCounts = {};
+
+  /// The attempt being played; [_attemptOpen] is cleared once it is reported
+  /// as completed, failed or quit, so each outcome is logged at most once.
+  LevelAnalytics? _attempt;
+  bool _attemptOpen = false;
+  int _attemptHints = 0;
+  int _attemptContinues = 0;
+
+  /// Play time of the attempt; paused in the background and the pause menu.
+  final Stopwatch _attemptClock = Stopwatch();
+  bool _pauseMenuOpen = false;
+  bool _inBackground = false;
+
+  /// One game session = one visit to the gameplay screen.
+  final Stopwatch _sessionClock = Stopwatch();
+  bool _sessionOpen = false;
+  int _sessionLevelsStarted = 0;
+  int _sessionLevelsCompleted = 0;
+
+  /// Source of the how-to-play overlay currently showing, if any.
+  String? _tutorialSource;
+
   ThemeModel get theme => currentTheme.value;
 
   int get gridSize => _engine.gridSize;
@@ -98,12 +124,16 @@ class GameplayController extends GetxController {
     super.onInit();
     _syncTheme();
     _ensureStartingHints();
+    _sessionOpen = true;
+    _sessionClock.start();
+    _analytics.gameSessionStart();
   }
 
   @override
   void onClose() {
     _cancelPendingEscape();
     _blockerTimer?.cancel();
+    _endSession();
     super.onClose();
   }
 
@@ -160,6 +190,7 @@ class GameplayController extends GetxController {
     final level = LevelRepository.getLevel(lvl);
     _level.value = level;
 
+    var resumed = false;
     final saved = _storage.getSavedGame(lvl);
     if (saved != null) {
       final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
@@ -175,6 +206,7 @@ class GameplayController extends GetxController {
           mistakes: mistakes,
           lives: lives,
         );
+        resumed = true;
       } else {
         _engine.loadLevel(level);
       }
@@ -186,10 +218,8 @@ class GameplayController extends GetxController {
     newlyAvailableArrowIds.clear();
     isTutorialLevel.value = lvl == 1 && !_progress.progress.hasSeenTutorial;
 
-    _analytics.logEvent(
-      AnalyticsEvent.levelStarted,
-      params: {'level': lvl, 'difficulty': level.difficulty.name},
-    );
+    _beginAttempt(resumed: resumed);
+    if (isTutorialLevel.value) _beginTutorial('first_level');
   }
 
   /// Loads a daily challenge board. [dailyDateKey] ('YYYY-MM-DD') identifies
@@ -208,6 +238,7 @@ class GameplayController extends GetxController {
     _level.value = level;
     levelNumber.value = level.levelNumber;
 
+    var resumed = false;
     final saved = _storage.getDailySavedGame(_dailyDateKey!);
     if (saved != null) {
       final removed = (saved['removedArrowIds'] as List?)?.cast<String>() ?? [];
@@ -223,6 +254,7 @@ class GameplayController extends GetxController {
           mistakes: mistakes,
           lives: lives,
         );
+        resumed = true;
       } else {
         _engine.loadLevel(level);
       }
@@ -236,6 +268,7 @@ class GameplayController extends GetxController {
     isGameOver.value = false;
     newlyAvailableArrowIds.clear();
     isTutorialLevel.value = false;
+    _beginAttempt(resumed: resumed);
   }
 
   /// Saves the current in-progress puzzle state to storage.
@@ -301,10 +334,6 @@ class GameplayController extends GetxController {
         _audio.playArrowEscape();
         _haptic.selectionClick();
         animatingArrowId.value = arrowId;
-        _analytics.logEvent(
-          AnalyticsEvent.arrowTapped,
-          params: {'arrowId': arrowId},
-        );
 
         // After animation duration, mark removed and check win
         _cancelPendingEscape();
@@ -331,7 +360,6 @@ class GameplayController extends GetxController {
 
       case TapResult.blocked:
         _audio.playBlocked();
-        _analytics.logEvent(AnalyticsEvent.arrowBlocked);
         _haptic.lightTap();
         _showBlocker(arrowId);
         saveCurrentGame();
@@ -344,6 +372,7 @@ class GameplayController extends GetxController {
             () {
               if (_engine.lives <= 0 && !isComplete.value) {
                 isGameOver.value = true;
+                _reportFail();
               }
             },
           );
@@ -374,7 +403,7 @@ class GameplayController extends GetxController {
     newlyAvailableArrowIds.clear();
     _syncState();
     saveCurrentGame();
-    _analytics.logEvent(AnalyticsEvent.undoUsed);
+    if (_attempt != null) _analytics.undoUsed(_attempt!);
   }
 
   bool onHint() {
@@ -384,7 +413,8 @@ class GameplayController extends GetxController {
     if (hintId == null) return false;
 
     hintedArrowId.value = hintId;
-    _analytics.logEvent(AnalyticsEvent.hintUsed);
+    _attemptHints++;
+    if (_attempt != null) _analytics.hintUsed(_attempt!);
 
     // Clear hint highlight after 2s
     Future.delayed(const Duration(seconds: 2), () {
@@ -394,6 +424,14 @@ class GameplayController extends GetxController {
   }
 
   void onReset() {
+    final reason = isGameOver.value
+        ? 'retry'
+        : (isComplete.value || isCompleting.value)
+        ? 'replay'
+        : 'restart';
+    if (_attempt != null) _analytics.levelRestart(_attempt!, reason: reason);
+    // A restart replaces the running attempt; it is not a quit.
+    _attemptOpen = false;
     _clearBlocker();
     _cancelPendingEscape();
     clearSavedGame();
@@ -405,6 +443,14 @@ class GameplayController extends GetxController {
     isCompleting.value = false;
     isGameOver.value = false;
     _syncState();
+    _beginAttempt(resumed: false);
+  }
+
+  /// Campaign "Next Level" from the completion dialog.
+  void loadNextLevel() {
+    final from = currentLevelNumber;
+    _analytics.nextLevel(fromLevel: from);
+    loadLevel(from + 1);
   }
 
   /// Shows a rewarded ad. If the user watches it fully, grants lives and
@@ -414,6 +460,10 @@ class GameplayController extends GetxController {
     if (granted) {
       _engine.restoreLives(AppConstants.startingLives);
       isGameOver.value = false;
+      // Play goes on in the same attempt after a continue.
+      _attemptContinues++;
+      _attemptOpen = _attempt != null;
+      _resumeClock();
       _syncState();
       _haptic.lightTap();
       saveCurrentGame();
@@ -432,11 +482,55 @@ class GameplayController extends GetxController {
   }
 
   /// Shows the how-to-play overlay again (pause menu, settings).
-  void showTutorial() => isTutorialLevel.value = true;
+  void showTutorial() {
+    isTutorialLevel.value = true;
+    _beginTutorial('pause_menu');
+  }
 
+  /// Closes the how-to-play overlay after its last step.
   void dismissTutorial() {
+    final source = _tutorialSource;
+    if (source != null) _analytics.tutorialComplete(source: source);
+    skipTutorial();
+  }
+
+  /// Closes the how-to-play overlay early (no tutorial_complete).
+  void skipTutorial() {
+    _tutorialSource = null;
     isTutorialLevel.value = false;
     _progress.markTutorialSeen();
+  }
+
+  /// Pause menu opened / closed. [resumed] is false when the player left the
+  /// menu through another action (restart, how to play, leaving the level).
+  void onPauseOpened() {
+    _pauseMenuOpen = true;
+    _attemptClock.stop();
+    if (_attempt != null) _analytics.pauseGame(_attempt!);
+  }
+
+  void onPauseClosed({required bool resumed}) {
+    _pauseMenuOpen = false;
+    _resumeClock();
+    if (resumed && _attempt != null) _analytics.resumeGame(_attempt!);
+  }
+
+  /// App moved to or from the background while this level is open.
+  void onAppLifecycleChanged(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+        _inBackground = true;
+        _attemptClock.stop();
+        _sessionClock.stop();
+      case AppLifecycleState.resumed:
+        _inBackground = false;
+        if (_sessionOpen) _sessionClock.start();
+        _resumeClock();
+      case AppLifecycleState.detached:
+        _endSession();
+      default:
+        break;
+    }
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -481,14 +575,6 @@ class GameplayController extends GetxController {
         final last = _progress.progress.lastDailyCompletedDate;
         final alreadyDone = last != null && last.compareTo(_dailyDateKey!) >= 0;
         lastCoinsEarned = alreadyDone ? 0 : AppConstants.coinsDailyChallenge;
-        _analytics.logEvent(
-          AnalyticsEvent.dailyChallengeCompleted,
-          params: {
-            'date': _dailyDateKey!,
-            'stars': stars,
-            'moves': _engine.moves,
-          },
-        );
       } else {
         lastCoinsEarned = AppConstants.coinsPerLevelComplete +
             (stars == 3 ? AppConstants.coinsFor3Stars : 0);
@@ -500,15 +586,13 @@ class GameplayController extends GetxController {
             stars: stars,
           );
         }
+      }
 
-        _analytics.logEvent(
-          AnalyticsEvent.levelCompleted,
-          params: {
-            'level': currentLevelNumber,
-            'stars': stars,
-            'moves': _engine.moves,
-          },
-        );
+      if (_attemptOpen) {
+        _attemptOpen = false;
+        _attemptClock.stop();
+        _sessionLevelsCompleted++;
+        _analytics.levelComplete(_attempt!, _attemptStats(), stars: stars);
       }
 
       // Let the board glow and the reward travel before the dialog arrives.
@@ -522,6 +606,85 @@ class GameplayController extends GetxController {
   }
 
   int get calculatedStars => _engine.calculateStars();
+
+  // ── Analytics helpers ─────────────────────────────────────────────────────
+
+  /// Starts a new attempt on the loaded board and logs level_start. A still
+  /// running attempt that gets replaced is reported as quit first.
+  void _beginAttempt({required bool resumed}) {
+    _reportQuit();
+    final level = _level.value;
+    if (level == null) return;
+    final daily = isDailyChallenge.value;
+    final key = daily ? 'daily_$_dailyDateKey' : 'level_${level.levelNumber}';
+    final attempt = (_attemptCounts[key] ?? 0) + 1;
+    _attemptCounts[key] = attempt;
+    _attempt = LevelAnalytics(
+      levelNumber: level.levelNumber,
+      gameMode: daily ? GameMode.daily : GameMode.campaign,
+      difficulty: level.difficulty.name,
+      attemptNumber: attempt,
+      dailyDate: daily ? _dailyDateKey : null,
+    );
+    _attemptOpen = true;
+    _attemptHints = 0;
+    _attemptContinues = 0;
+    _attemptClock
+      ..stop()
+      ..reset();
+    _resumeClock();
+    _sessionLevelsStarted++;
+    _analytics.levelStart(_attempt!, resumed: resumed);
+  }
+
+  void _resumeClock() {
+    if (_attemptOpen && !_pauseMenuOpen && !_inBackground) {
+      _attemptClock.start();
+    }
+  }
+
+  LevelStats _attemptStats() => LevelStats(
+    moves: _engine.moves,
+    mistakes: _engine.mistakes,
+    hints: _attemptHints,
+    continues: _attemptContinues,
+    arrowsCleared: _engine.removedArrowIds.length,
+    arrowsTotal: arrows.length,
+    seconds: _attemptClock.elapsed.inSeconds,
+  );
+
+  void _reportFail() {
+    if (!_attemptOpen) return;
+    _attemptOpen = false;
+    _attemptClock.stop();
+    _analytics.levelFail(_attempt!, _attemptStats());
+  }
+
+  /// Leaving (or replacing) a level that was neither completed nor failed.
+  void _reportQuit() {
+    if (!_attemptOpen) return;
+    _attemptOpen = false;
+    _attemptClock.stop();
+    _analytics.levelQuit(_attempt!, _attemptStats());
+  }
+
+  void _beginTutorial(String source) {
+    if (_tutorialSource != null) return;
+    _tutorialSource = source;
+    _analytics.tutorialBegin(source: source);
+  }
+
+  void _endSession() {
+    if (!_sessionOpen) return;
+    _reportQuit();
+    _sessionOpen = false;
+    _sessionClock.stop();
+    _analytics.gameSessionEnd(
+      durationSeconds: _sessionClock.elapsed.inSeconds,
+      levelsStarted: _sessionLevelsStarted,
+      levelsCompleted: _sessionLevelsCompleted,
+    );
+  }
 
   void markTutorialSeen() => _progress.markTutorialSeen();
 }

@@ -96,6 +96,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _controller.onAppLifecycleChanged(state);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached ||
@@ -169,7 +170,7 @@ class _GameplayScreenState extends State<GameplayScreen>
             Get.back();
             return;
           }
-          _controller.loadLevel(_controller.currentLevelNumber + 1);
+          _controller.loadNextLevel();
         },
         onReplay: () {
           Navigator.of(dialogContext).pop(true);
@@ -244,13 +245,19 @@ class _GameplayScreenState extends State<GameplayScreen>
         ? Get.find<SettingsController>()
         : Get.put(SettingsController());
     final isDaily = _controller.isDailyChallenge.value;
+    // Stays true when the sheet closes through Resume or a swipe down.
+    var resumed = true;
+    _controller.onPauseOpened();
 
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (sheetContext) {
-        void close() => Navigator.of(sheetContext).pop();
+        void close({bool resume = false}) {
+          resumed = resume;
+          Navigator.of(sheetContext).pop();
+        }
         return SafeArea(
           child: Container(
             margin: const EdgeInsets.all(AppSpacing.md),
@@ -285,7 +292,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                     label: AppStrings.resume,
                     icon: Icons.play_arrow_rounded,
                     width: double.infinity,
-                    onTap: close,
+                    onTap: () => close(resume: true),
                   ),
                   const SizedBox(height: AppSpacing.sm + 2),
                   Row(
@@ -376,7 +383,7 @@ class _GameplayScreenState extends State<GameplayScreen>
           ),
         );
       },
-    );
+    ).whenComplete(() => _controller.onPauseClosed(resumed: resumed));
   }
 
   String _titleText() {
@@ -490,7 +497,10 @@ class _GameplayScreenState extends State<GameplayScreen>
           // How-to-play overlay
           if (_controller.isTutorialLevel.value &&
               !_controller.isComplete.value)
-            TutorialOverlay(onDismiss: _controller.dismissTutorial),
+            TutorialOverlay(
+              onDismiss: _controller.dismissTutorial,
+              onSkip: _controller.skipTutorial,
+            ),
         ],
       ),
     );

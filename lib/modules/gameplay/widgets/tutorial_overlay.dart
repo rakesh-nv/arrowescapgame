@@ -9,9 +9,13 @@ import '../../../widgets/primary_button.dart';
 /// Three-step "how to play" card. Each step shows a tiny board diagram so the
 /// rule is visible, not just described.
 class TutorialOverlay extends StatefulWidget {
+  /// Called when the last step is confirmed (and on Skip if [onSkip] is null).
   final VoidCallback onDismiss;
 
-  const TutorialOverlay({super.key, required this.onDismiss});
+  /// Called when Skip closes the overlay early.
+  final VoidCallback? onSkip;
+
+  const TutorialOverlay({super.key, required this.onDismiss, this.onSkip});
 
   @override
   State<TutorialOverlay> createState() => _TutorialOverlayState();
@@ -135,7 +139,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
                       if (!isLast)
                         Expanded(
                           child: TextButton(
-                            onPressed: widget.onDismiss,
+                            onPressed: widget.onSkip ?? widget.onDismiss,
                             child: const Text(
                               AppStrings.skip,
                               style: TextStyle(color: AppColors.textSecondary),

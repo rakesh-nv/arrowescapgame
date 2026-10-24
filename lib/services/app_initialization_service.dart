@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -223,11 +225,32 @@ class AppInitializationService {
   }
 
   static Future<void> initializeAds() async {
+    // Analytics first: it never throws, and must not depend on ads.
+    await initializeAnalytics();
     await AdsModule.initialize();
+  }
 
-    if (!Get.isRegistered<IAnalyticsService>()) {
-      Get.put<IAnalyticsService>(DebugAnalyticsService(), permanent: true);
+  /// Registers Firebase Analytics, or a local fallback when Firebase cannot
+  /// start (tests, platforms without a Firebase config, any init error).
+  /// Firebase needs no network to start, and the timeout keeps a slow start
+  /// from holding the splash screen.
+  static Future<void> initializeAnalytics() async {
+    if (Get.isRegistered<IAnalyticsService>()) return;
+    IAnalyticsService service =
+        kDebugMode ? DebugAnalyticsService() : NoOpAnalyticsService();
+    if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+      try {
+        if (Firebase.apps.isEmpty) {
+          await Firebase.initializeApp().timeout(const Duration(seconds: 3));
+        }
+        service = FirebaseAnalyticsService(FirebaseAnalytics.instance);
+      } catch (e) {
+        if (kDebugMode) {
+          print('Firebase initialization warning (analytics disabled): $e');
+        }
+      }
     }
+    Get.put<IAnalyticsService>(service, permanent: true);
   }
 
   /// Registers the in-app update service. Only wiring happens here; the
