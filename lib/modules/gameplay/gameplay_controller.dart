@@ -48,6 +48,10 @@ class GameplayController extends GetxController {
   final RxString hintedArrowId = ''.obs;
   final RxString animatingArrowId = ''.obs;
 
+  /// Counts own-tail crashes. Changes once per crash, so the screen shows one
+  /// message for each.
+  final RxInt selfCrashes = 0.obs;
+
   /// True while the next board is generated off the UI thread.
   final RxBool isLoadingLevel = false.obs;
 
@@ -333,36 +337,16 @@ class GameplayController extends GetxController {
       case TapResult.valid:
         _audio.playArrowEscape();
         _haptic.selectionClick();
-        animatingArrowId.value = arrowId;
-
-        // After animation duration, mark removed and check win
-        _cancelPendingEscape();
-        _escapeTimer = Timer(
-          Duration(
-            milliseconds: AppConstants.arrowEscapeDurationForLength(
-              arrowLength,
-            ),
-          ),
-          () {
-            _escapeTimer = null;
-            _engine.markArrowRemoved(arrowId);
-            animatingArrowId.value = '';
-            hintedArrowId.value = '';
-            newlyAvailableArrowIds.clear();
-            _syncState();
-            if (!_engine.isComplete()) {
-              saveCurrentGame();
-            }
-            _checkWin();
-          },
-        );
+        _startEscape(arrowId, arrowLength);
         break;
 
       case TapResult.blocked:
+      case TapResult.selfCrash:
         _audio.playBlocked();
         _haptic.lightTap();
         _showBlocker(arrowId);
         saveCurrentGame();
+        if (result == TapResult.selfCrash) selfCrashes.value++;
 
         if (_engine.lives <= 0) {
           Future.delayed(
@@ -391,6 +375,29 @@ class GameplayController extends GetxController {
       case TapResult.ignored:
         break;
     }
+  }
+
+  /// Runs the escape animation, then removes the arrow and checks for a win.
+  void _startEscape(String arrowId, int arrowLength) {
+    animatingArrowId.value = arrowId;
+    _cancelPendingEscape();
+    _escapeTimer = Timer(
+      Duration(
+        milliseconds: AppConstants.arrowEscapeDurationForLength(arrowLength),
+      ),
+      () {
+        _escapeTimer = null;
+        _engine.markArrowRemoved(arrowId);
+        animatingArrowId.value = '';
+        hintedArrowId.value = '';
+        newlyAvailableArrowIds.clear();
+        _syncState();
+        if (!_engine.isComplete()) {
+          saveCurrentGame();
+        }
+        _checkWin();
+      },
+    );
   }
 
   void onUndo() {

@@ -126,6 +126,7 @@ class AppStrings {
   // Gameplay
   static const String level = 'Level';
   static const String hint = 'Hint';
+  static const String selfCrashMessage = 'Crashed into your own tail!';
   static const String undo = 'Undo';
   static const String pause = 'Pause';
   static const String resume = 'Resume';

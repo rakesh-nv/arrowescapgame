@@ -6,6 +6,9 @@ enum TapResult {
   /// Arrow is blocked — cannot escape yet
   blocked,
 
+  /// Arrow crashed into its own tail: a normal crash with its own message
+  selfCrash,
+
   /// Arrow is already removed or escaping (ignore)
   ignored,
 }

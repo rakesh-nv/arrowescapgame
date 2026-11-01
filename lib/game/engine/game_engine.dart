@@ -138,6 +138,7 @@ class GameEngine {
   ///
   /// Returns [TapResult.valid] if the arrow can escape and starts the animation.
   /// Returns [TapResult.blocked] if it cannot escape.
+  /// Returns [TapResult.selfCrash] if its head would hit its own body.
   /// Returns [TapResult.ignored] if the arrow does not exist or is already gone.
   TapResult tapArrow(String arrowId) {
     final arrow = _arrows[arrowId];
@@ -147,7 +148,8 @@ class GameEngine {
       return TapResult.ignored;
     }
 
-    if (canEscape(arrowId)) {
+    final selfCrash = isSelfCrash(arrowId);
+    if (canEscape(arrowId) && !selfCrash) {
       // Push undo snapshot before mutating
       _pushUndo();
 
@@ -161,8 +163,19 @@ class GameEngine {
       _mistakes++;
       // Lose 1 life on every mistake
       _lives = (_lives - 1).clamp(0, AppConstants.maxLives);
-      return TapResult.blocked;
+      return selfCrash ? TapResult.selfCrash : TapResult.blocked;
     }
+  }
+
+  /// True if tapping [arrowId] now would crash it into its own tail: the
+  /// first thing in its lane is its own body. Generated boards never contain
+  /// such an arrow (see ArrowRepair and LevelValidator).
+  bool isSelfCrash(String arrowId) {
+    final arrow = _arrows[arrowId];
+    return arrow != null &&
+        arrow.state != ArrowState.removed &&
+        arrow.state != ArrowState.escaping &&
+        LevelSolver.firstCollision(arrow, activeArrows, _gridSize) == arrowId;
   }
 
   /// Called after the escape animation completes — mark arrow as removed
@@ -228,6 +241,10 @@ class GameEngine {
 
   /// Returns the ID of a recommended arrow to tap next, or null
   String? getHintArrowId() {
+    // Never suggest a crash while a safe arrow is available.
+    for (final arrow in getAvailableArrows()) {
+      if (!isSelfCrash(arrow.id)) return arrow.id;
+    }
     return LevelSolver.hint(activeArrows, _gridSize);
   }
 

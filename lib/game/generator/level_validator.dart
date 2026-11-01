@@ -17,6 +17,7 @@ class LevelValidator {
   ///   step one orthogonal cell, inside the board;
   /// * its direction is the direction of its last segment, so the head never
   ///   points back into its own body;
+  /// * its exit lane never crosses its own body;
   /// * no two arrows share a cell, and no arrow leaves the silhouette;
   /// * the arrows cover at least [minPictureFill] of the silhouette;
   /// * the board has an escape order, and replaying that order under the
@@ -43,6 +44,9 @@ class LevelValidator {
       final (hr, hc) = a.points.last;
       if (hr - pr != a.exitDirection.dRow || hc - pc != a.exitDirection.dCol) {
         out.add('${a.id}: direction differs from its last segment');
+      }
+      if (LevelSolver.firstCollision(a, [a], n) == a.id) {
+        out.add('${a.id}: head runs into its own body');
       }
       for (final cell in a.occupiedCells) {
         final other = owner[cell];

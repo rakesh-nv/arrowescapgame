@@ -10,6 +10,7 @@ import '../../data/models/level_model.dart';
 import '../config/difficulty_curve.dart';
 import '../solver/level_solver.dart';
 import 'dependency_analyzer.dart';
+import 'arrow_repair.dart';
 import 'level_validator.dart';
 import 'shape_path_generator.dart';
 import 'silhouette.dart';
@@ -125,6 +126,7 @@ class LevelGenerator {
       List<ArrowModel>? best;
       Set<Cell>? bestMask;
       var bestScore = double.infinity;
+      var bestRepaired = 0;
       for (var attempt = 0; attempt < stage.attempts; attempt++) {
         final rng = Random(stage.rngSeed(seed, attempt, levelNumber));
         final mask = shape
@@ -161,7 +163,12 @@ class LevelGenerator {
 
         final score = _targetDistance(candidate, plan, spec, mask);
         if (score < bestScore) {
-          best = candidate;
+          // Arrows that would hit their own body are re-routed over their own
+          // cells. A board where that is impossible loses to the next attempt.
+          final repair = ArrowRepair.repair(candidate, spec.gridSize);
+          if (repair == null) continue;
+          best = repair.arrows;
+          bestRepaired = repair.repaired;
           bestMask = mask;
           bestScore = score;
         }
@@ -198,7 +205,8 @@ class LevelGenerator {
             'arrows ${best.length} occ '
             '${(m.occupancy * 100).toStringAsFixed(0)}% avgLen '
             '${m.averagePathLength.toStringAsFixed(1)} rounds ${plan.rounds} '
-            'blocked ${(1 - plan.initiallyFree / best.length).toStringAsFixed(2)}',
+            'blocked ${(1 - plan.initiallyFree / best.length).toStringAsFixed(2)} '
+            'repaired $bestRepaired',
           );
         }
         return level;

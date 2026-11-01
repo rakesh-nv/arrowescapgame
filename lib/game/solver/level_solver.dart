@@ -134,6 +134,31 @@ class LevelSolver {
     return null;
   }
 
+  /// The id of the first arrow the head of [arrow] runs into along its exit
+  /// lane, counting [arrow]'s own body (it is one of [remaining]), or null if
+  /// the lane is empty. Cells are read as occupied at the time of the tap, for
+  /// own and foreign cells alike.
+  static String? firstCollision(
+    ArrowModel arrow,
+    List<ArrowModel> remaining,
+    int gridSize,
+  ) {
+    final owners = <(int, int), String>{
+      for (final a in remaining)
+        for (final cell in a.occupiedCells) cell: a.id,
+    };
+    final dir = arrow.exitDirection;
+    var r = arrow.headRow + dir.dRow;
+    var c = arrow.headCol + dir.dCol;
+    while (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+      final owner = owners[(r, c)];
+      if (owner != null) return owner;
+      r += dir.dRow;
+      c += dir.dCol;
+    }
+    return null;
+  }
+
   /// Returns all arrows that can currently escape from the board
   static List<ArrowModel> getAvailableArrows(
       List<ArrowModel> arrows, int gridSize) {

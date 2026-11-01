@@ -79,6 +79,7 @@ class _GameplayScreenState extends State<GameplayScreen>
           );
         }
       }),
+      ever(_controller.selfCrashes, (_) => _showSelfCrashMessage()),
       ever(_controller.isCompleting, (bool active) {
         if (active) _rewardController.forward(from: 0);
       }),
@@ -121,6 +122,20 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   // ── Dialogs ───────────────────────────────────────────────────────────────
+
+  void _showSelfCrashMessage() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(AppStrings.selfCrashMessage),
+        backgroundColor: AppColors.warning,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
 
   void _showGameOverDialog() {
     if (!mounted) return;

@@ -35,7 +35,7 @@ class AppConstants {
   /// Bumped whenever generation changes the board a level produces. Saved
   /// in-progress games from another version are discarded, because their
   /// removed-arrow ids refer to a different board.
-  static const int levelGeneratorVersion = 7;
+  static const int levelGeneratorVersion = 8;
 
   // Solver
   static const int solverMaxIterations = 100000;
