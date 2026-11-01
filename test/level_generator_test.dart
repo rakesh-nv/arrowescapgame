@@ -15,8 +15,9 @@ import 'package:arrowescapegame/game/solver/level_solver.dart';
 LevelModel _campaign(int n) =>
     LevelGenerator.generate(levelNumber: n, seed: AppConstants.levelSeed(n))!;
 
-List<List<Object>> _boardKey(LevelModel l) =>
-    [for (final a in l.arrows) [a.id, a.points]];
+List<List<Object>> _boardKey(LevelModel l) => [
+  for (final a in l.arrows) [a.id, a.points],
+];
 
 /// Structural validity under the game's real rules.
 void _expectValidBoard(LevelModel level, {String reason = ''}) {
@@ -27,8 +28,11 @@ void _expectValidBoard(LevelModel level, {String reason = ''}) {
     expect(ids.add(a.id), isTrue, reason: '$reason duplicate id ${a.id}');
     expect(a.hasValidPath, isTrue, reason: '$reason malformed path ${a.id}');
     expect(a.length, greaterThanOrEqualTo(3), reason: '$reason short ${a.id}');
-    expect(LevelSolver.isWithinGrid(a, n), isTrue,
-        reason: '$reason out of bounds ${a.id}');
+    expect(
+      LevelSolver.isWithinGrid(a, n),
+      isTrue,
+      reason: '$reason out of bounds ${a.id}',
+    );
     for (final cell in a.occupiedCells) {
       expect(seen.add(cell), isTrue, reason: '$reason overlap at $cell');
     }
@@ -64,7 +68,7 @@ void main() {
         final shape = DifficultyCurve.silhouetteForSeed(
           20261009,
           spec.gridSize,
-          targetCells: spec.targetCells,
+          targetCells: DifficultyCurve.unscaledCells(spec.targetCells),
         );
         expect(level.gridSize, DifficultyCurve.gridFor(spec, shape));
         expect(level.shapeName, shape.name);
@@ -131,130 +135,140 @@ void main() {
         expect(level.gridSize, size);
         _expectValidBoard(level, reason: 'guaranteed $size');
         // Every cell is used.
-        expect(
-          level.arrows.fold<int>(0, (s, a) => s + a.length),
-          size * size,
-        );
+        expect(level.arrows.fold<int>(0, (s, a) => s + a.length), size * size);
       }
     });
   });
 
-  test(
-    'Full campaign: every level is valid, sized by the curve, solvable, and '
-    'difficulty rises world by world',
-    () {
-      final perWorld = <int, List<List<double>>>{};
-      String? prevPattern;
-      double? prevScore;
-      var fallbackBoards = 0;
-      var maxStubShare = 0.0;
-      var minCell = double.infinity;
+  test('Full campaign: every level is valid, sized by the curve, solvable, and '
+      'difficulty rises world by world', () {
+    final perWorld = <int, List<List<double>>>{};
+    String? prevPattern;
+    double? prevScore;
+    var fallbackBoards = 0;
+    var maxStubShare = 0.0;
+    var minCell = double.infinity;
 
-      for (var n = 1; n <= AppConstants.totalLevels; n++) {
-        final level = _campaign(n);
+    for (var n = 1; n <= AppConstants.totalLevels; n++) {
+      final level = _campaign(n);
 
-        final reason = 'Level $n';
+      final reason = 'Level $n';
 
-        expect(level.levelNumber, n, reason: reason);
-        // Board size follows the picture so each level offers its target area.
-        expect(level.gridSize, LevelGenerator.gridForLevel(n), reason: reason);
-        // Classic levels keep their original cap; the extended campaign
-        // grows towards the final board size.
+      expect(level.levelNumber, n, reason: reason);
+      // Board size follows the picture so each level offers its target area.
+      expect(level.gridSize, LevelGenerator.gridForLevel(n), reason: reason);
+      // Classic levels keep their original cap; the extended campaign
+      // grows towards the final board size.
+      expect(
+        level.gridSize,
+        inInclusiveRange(
+          16,
+          n <= AppConstants.classicLevels
+              ? AppConstants.maxGridSize
+              : AppConstants.finalMaxGridSize,
+        ),
+        reason: reason,
+      );
+      expect(
+        level.difficulty,
+        DifficultyCurve.worldFor(n).difficulty,
+        reason: reason,
+      );
+      _expectValidBoard(level, reason: reason);
+
+      // Consecutive levels never share a shape.
+      final pattern = LevelGenerator.silhouetteForLevel(n).id;
+      expect(pattern, isNot(prevPattern), reason: '$reason repeats shape');
+      prevPattern = pattern;
+
+      final turns = level.arrows.fold<int>(0, (s, a) => s + a.turns);
+      if (turns == 0) fallbackBoards++;
+
+      final m = DependencyAnalyzer.analyze(level.arrows, level.gridSize);
+      final plan = LevelSolver.planningStats(level.arrows, level.gridSize)!;
+      final blocked = 1 - plan.initiallyFree / level.arrows.length;
+      final score = PuzzleSpec.complexityScore(
+        arrows: level.arrows.length,
+        avgLength: m.averagePathLength,
+        avgBends: turns / level.arrows.length,
+        rounds: plan.rounds,
+        blockedShare: blocked,
+      );
+
+      // Every board needs several planning waves and has traps up front.
+      expect(plan.rounds, greaterThanOrEqualTo(3), reason: reason);
+      expect(blocked, greaterThanOrEqualTo(0.3), reason: reason);
+
+      // Long paths, not fragments: few arrows of 3–4 cells (those left
+      // plug narrow gaps of the picture that no longer arrow can reach).
+      final stubs = level.arrows.where((a) => a.length <= 4).length;
+      expect(
+        stubs / level.arrows.length,
+        lessThanOrEqualTo(0.3),
+        reason: '$reason has $stubs short fragments',
+      );
+      maxStubShare = max(maxStubShare, stubs / level.arrows.length);
+      // The arrows draw the picture.
+      final filled = level.arrows.fold<int>(0, (s, a) => s + a.length);
+      expect(
+        filled / level.shapeCells.length,
+        greaterThanOrEqualTo(0.85),
+        reason: '$reason fill',
+      );
+      // The whole picture fits a small phone before any zoom: a 90-cell-wide
+      // picture gets ~3.9 dp cells, the 144-cell boards of the last levels
+      // ~2.4 dp (an overview to zoom into). Taps that straddle thin arrows
+      // magnify the board first, so small cells never cost a life.
+      final cell = _onScreenCell(level);
+      expect(
+        cell,
+        greaterThanOrEqualTo(n <= AppConstants.classicLevels ? 3.6 : 2.3),
+        reason: '$reason cell size',
+      );
+      minCell = min(minCell, cell);
+
+      // No sudden spikes or drops between neighbouring levels.
+      if (prevScore != null) {
+        // At most a quarter of the score: no sudden spike or drop.
         expect(
-            level.gridSize,
-            inInclusiveRange(
-                16,
-                n <= AppConstants.classicLevels
-                    ? AppConstants.maxGridSize
-                    : AppConstants.finalMaxGridSize),
-            reason: reason);
-        expect(level.difficulty, DifficultyCurve.worldFor(n).difficulty,
-            reason: reason);
-        _expectValidBoard(level, reason: reason);
-
-        // Consecutive levels never share a shape.
-        final pattern = LevelGenerator.silhouetteForLevel(n).id;
-        expect(pattern, isNot(prevPattern), reason: '$reason repeats shape');
-        prevPattern = pattern;
-
-        final turns = level.arrows.fold<int>(0, (s, a) => s + a.turns);
-        if (turns == 0) fallbackBoards++;
-
-        final m = DependencyAnalyzer.analyze(level.arrows, level.gridSize);
-        final plan = LevelSolver.planningStats(level.arrows, level.gridSize)!;
-        final blocked = 1 - plan.initiallyFree / level.arrows.length;
-        final score = PuzzleSpec.complexityScore(
-          arrows: level.arrows.length,
-          avgLength: m.averagePathLength,
-          avgBends: turns / level.arrows.length,
-          rounds: plan.rounds,
-          blockedShare: blocked,
+          (score - prevScore).abs(),
+          lessThanOrEqualTo(prevScore * 0.25),
+          reason: '$reason complexity jump',
         );
-
-        // Every board needs several planning waves and has traps up front.
-        expect(plan.rounds, greaterThanOrEqualTo(3), reason: reason);
-        expect(blocked, greaterThanOrEqualTo(0.3), reason: reason);
-
-        // Long paths, not fragments: few arrows of 3–4 cells (those left
-        // plug narrow gaps of the picture that no longer arrow can reach).
-        final stubs = level.arrows.where((a) => a.length <= 4).length;
-        expect(stubs / level.arrows.length, lessThanOrEqualTo(0.3),
-            reason: '$reason has $stubs short fragments');
-        maxStubShare = max(maxStubShare, stubs / level.arrows.length);
-        // The arrows draw the picture.
-        final filled = level.arrows.fold<int>(0, (s, a) => s + a.length);
-        expect(filled / level.shapeCells.length, greaterThanOrEqualTo(0.85),
-            reason: '$reason fill');
-        // The whole picture fits a small phone before any zoom: a 60-cell-wide
-        // picture gets ~5.8 dp cells, the 96-cell boards of the last levels
-        // ~3.6 dp (an overview to zoom into). Taps that straddle thin arrows
-        // magnify the board first, so small cells never cost a life.
-        final cell = _onScreenCell(level);
-        expect(
-            cell,
-            greaterThanOrEqualTo(
-                n <= AppConstants.classicLevels ? 5.5 : 3.4),
-            reason: '$reason cell size');
-        minCell = min(minCell, cell);
-
-        // No sudden spikes or drops between neighbouring levels.
-        if (prevScore != null) {
-          // At most a quarter of the score: no sudden spike or drop.
-          expect((score - prevScore).abs(), lessThanOrEqualTo(prevScore * 0.25),
-              reason: '$reason complexity jump');
-        }
-        prevScore = score;
-
-        perWorld.putIfAbsent(DifficultyCurve.worldFor(n).number, () => []).add([
-          level.gridSize.toDouble(),
-          level.arrows.length.toDouble(),
-          m.averagePathLength,
-          turns / level.arrows.length,
-          m.dependencyDepth.toDouble(),
-          plan.rounds.toDouble(),
-          blocked,
-          score,
-          level.shapeCells.length.toDouble(),
-          stubs / level.arrows.length,
-          level.arrows.map((a) => a.length).reduce(max).toDouble(),
-        ]);
       }
+      prevScore = score;
 
-      // The emergency board should never be needed for shipped levels.
-      expect(fallbackBoards, 0, reason: 'levels fell back to straight rows');
+      perWorld.putIfAbsent(DifficultyCurve.worldFor(n).number, () => []).add([
+        level.gridSize.toDouble(),
+        level.arrows.length.toDouble(),
+        m.averagePathLength,
+        turns / level.arrows.length,
+        m.dependencyDepth.toDouble(),
+        plan.rounds.toDouble(),
+        blocked,
+        score,
+        level.shapeCells.length.toDouble(),
+        stubs / level.arrows.length,
+        level.arrows.map((a) => a.length).reduce(max).toDouble(),
+      ]);
+    }
 
-      List<double> mean(int world) {
-        final rows = perWorld[world]!;
-        return [
-          for (var i = 0; i < rows.first.length; i++)
-            rows.fold<double>(0, (s, r) => s + r[i]) / rows.length,
-        ];
-      }
+    // The emergency board should never be needed for shipped levels.
+    expect(fallbackBoards, 0, reason: 'levels fell back to straight rows');
 
-      final worlds = perWorld.keys.toList()..sort();
-      final means = [for (final w in worlds) mean(w)];
-      // ignore: avoid_print
-      print([
+    List<double> mean(int world) {
+      final rows = perWorld[world]!;
+      return [
+        for (var i = 0; i < rows.first.length; i++)
+          rows.fold<double>(0, (s, r) => s + r[i]) / rows.length,
+      ];
+    }
+
+    final worlds = perWorld.keys.toList()..sort();
+    final means = [for (final w in worlds) mean(w)];
+    // ignore: avoid_print
+    print(
+      [
         for (var i = 0; i < means.length; i++)
           'W${worlds[i]}: grid ${means[i][0].toStringAsFixed(1)} '
               'arrows ${means[i][1].toStringAsFixed(1)} '
@@ -269,71 +283,74 @@ void main() {
               'longest ${means[i][10].toStringAsFixed(1)}',
         'max stub share ${(maxStubShare * 100).toStringAsFixed(0)}%, '
             'smallest cell ${minCell.toStringAsFixed(1)} dp',
-      ].join('\n'));
+      ].join('\n'),
+    );
 
-      // Across every world, short fragments stay rare.
-      for (final m in means) {
-        expect(m[9], lessThanOrEqualTo(0.15));
-      }
+    // Across every world, short fragments stay rare.
+    for (final m in means) {
+      expect(m[9], lessThanOrEqualTo(0.15));
+    }
 
-      // Playable area, arrow length, turns and the overall complexity rise
-      // every single world of the classic campaign: difficulty is not only
-      // "more arrows". The 32 worlds of the extended campaign take smaller
-      // steps each, so picture-to-picture variety can make neighbouring
-      // worlds tie; there they must rise from every block of four worlds
-      // (100 levels) to the next, starting above the last classic world.
-      const rising = [
-        (8, 'playable area'),
-        (2, 'avg length'),
-        (3, 'bends'),
-        (7, 'complexity score'),
-      ];
-      const classicWorlds =
-          AppConstants.classicLevels ~/ AppConstants.levelsPerWorld;
-      for (var i = 1; i < classicWorlds; i++) {
-        for (final (index, name) in rising) {
-          expect(
-            means[i][index],
-            greaterThan(means[i - 1][index]),
-            reason: '$name should rise from world ${worlds[i - 1]} '
-                'to ${worlds[i]}',
-          );
-        }
+    // Playable area, arrow length, turns and the overall complexity rise
+    // every single world of the classic campaign: difficulty is not only
+    // "more arrows". The 32 worlds of the extended campaign take smaller
+    // steps each, so picture-to-picture variety can make neighbouring
+    // worlds tie; there they must rise from every block of four worlds
+    // (100 levels) to the next, starting above the last classic world.
+    const rising = [
+      (8, 'playable area'),
+      (2, 'avg length'),
+      (3, 'bends'),
+      (7, 'complexity score'),
+    ];
+    const classicWorlds =
+        AppConstants.classicLevels ~/ AppConstants.levelsPerWorld;
+    for (var i = 1; i < classicWorlds; i++) {
+      for (final (index, name) in rising) {
+        expect(
+          means[i][index],
+          greaterThan(means[i - 1][index]),
+          reason:
+              '$name should rise from world ${worlds[i - 1]} '
+              'to ${worlds[i]}',
+        );
       }
-      List<double> blockMean(int first) => [
-            for (var k = 0; k < means.first.length; k++)
-              means.skip(first).take(4).fold<double>(0, (s, m) => s + m[k]) / 4,
-          ];
-      var previous = means[classicWorlds - 1];
-      for (var first = classicWorlds; first + 4 <= means.length; first += 4) {
-        final block = blockMean(first);
-        for (final (index, name) in rising) {
-          expect(
-            block[index],
-            greaterThan(previous[index]),
-            reason: '$name should rise into worlds ${first + 1}-${first + 4}',
-          );
-        }
-        previous = block;
+    }
+    List<double> blockMean(int first) => [
+      for (var k = 0; k < means.first.length; k++)
+        means.skip(first).take(4).fold<double>(0, (s, m) => s + m[k]) / 4,
+    ];
+    var previous = means[classicWorlds - 1];
+    for (var first = classicWorlds; first + 4 <= means.length; first += 4) {
+      final block = blockMean(first);
+      for (final (index, name) in rising) {
+        expect(
+          block[index],
+          greaterThan(previous[index]),
+          reason: '$name should rise into worlds ${first + 1}-${first + 4}',
+        );
       }
-      // Dependency depth (planning) is higher in the second half.
-      final half = means.length ~/ 2;
-      double avgDepth(Iterable<List<double>> ms) =>
-          ms.fold<double>(0, (s, m) => s + m[4]) / ms.length;
-      expect(avgDepth(means.skip(half)), greaterThan(avgDepth(means.take(half))));
-      expect(means.last[4], greaterThan(means.first[4]));
-      // Board size, arrow count, planning rounds and up-front traps rise
-      // across the campaign. They are whole numbers that also depend on each
-      // picture, so neighbouring worlds may tie or dip slightly.
-      double avgOf(Iterable<List<double>> ms, int i) =>
-          ms.fold<double>(0, (s, m) => s + m[i]) / ms.length;
-      for (final i in [0, 1, 5, 6]) {
-        expect(avgOf(means.skip(half), i), greaterThan(avgOf(means.take(half), i)));
-        expect(means.last[i], greaterThan(means.first[i]));
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 40)),
-  );
+      previous = block;
+    }
+    // Dependency depth (planning) is higher in the second half.
+    final half = means.length ~/ 2;
+    double avgDepth(Iterable<List<double>> ms) =>
+        ms.fold<double>(0, (s, m) => s + m[4]) / ms.length;
+    expect(avgDepth(means.skip(half)), greaterThan(avgDepth(means.take(half))));
+    expect(means.last[4], greaterThan(means.first[4]));
+    // Board size, arrow count, planning rounds and up-front traps rise
+    // across the campaign. They are whole numbers that also depend on each
+    // picture, so neighbouring worlds may tie or dip slightly.
+    double avgOf(Iterable<List<double>> ms, int i) =>
+        ms.fold<double>(0, (s, m) => s + m[i]) / ms.length;
+    for (final i in [0, 1, 5, 6]) {
+      expect(
+        avgOf(means.skip(half), i),
+        greaterThan(avgOf(means.take(half), i)),
+      );
+      expect(means.last[i], greaterThan(means.first[i]));
+    }
+  }, timeout: const Timeout(Duration(minutes: 40)));
 
   test('Early levels are large picture puzzles, yet fair', () {
     // Earlier curves started at 6×6 (4–6 arrows), then 10×10 (9–13 arrows),
@@ -353,19 +370,22 @@ void main() {
       // Many long arrows from the very first level.
       expect(level.arrows.length, greaterThanOrEqualTo(38), reason: reason);
       expect(m.averagePathLength, greaterThanOrEqualTo(8), reason: reason);
-      expect(turns / level.arrows.length, greaterThanOrEqualTo(1),
-          reason: '$reason has 90° turns');
+      expect(
+        turns / level.arrows.length,
+        greaterThanOrEqualTo(1),
+        reason: '$reason has 90° turns',
+      );
       expect(plan.rounds, greaterThanOrEqualTo(3), reason: reason);
       expect(blocked, greaterThanOrEqualTo(0.35), reason: reason);
 
       // Fair for a newcomer: a few arrows are free on the first tap and no
       // single arrow fills the board.
       expect(plan.initiallyFree, greaterThanOrEqualTo(2), reason: reason);
-      expect(plan.rounds, lessThanOrEqualTo(7), reason: reason);
+      expect(plan.rounds, lessThanOrEqualTo(11), reason: reason);
       final longest = level.arrows
           .map((ArrowModel a) => a.length)
           .reduce((a, b) => a > b ? a : b);
-      expect(longest, inInclusiveRange(10, 24), reason: reason);
+      expect(longest, inInclusiveRange(15, 40), reason: reason);
     }
   });
 
@@ -384,20 +404,29 @@ void main() {
       expect(level.arrows.length, greaterThanOrEqualTo(65), reason: reason);
       expect(m.averagePathLength, greaterThanOrEqualTo(11), reason: reason);
       expect(longest, greaterThanOrEqualTo(25), reason: reason);
-      expect(turns / level.arrows.length, greaterThanOrEqualTo(5),
-          reason: '$reason winding');
+      expect(
+        turns / level.arrows.length,
+        greaterThanOrEqualTo(5),
+        reason: '$reason winding',
+      );
       expect(plan.rounds, greaterThanOrEqualTo(9), reason: reason);
       // The arrows draw the picture rather than leaving it half empty.
       final filled = level.arrows.fold<int>(0, (s, a) => s + a.length);
-      expect(filled / level.shapeCells.length, greaterThanOrEqualTo(0.85),
-          reason: reason);
+      expect(
+        filled / level.shapeCells.length,
+        greaterThanOrEqualTo(0.85),
+        reason: reason,
+      );
       // Replaying the solver's order under the game rule clears the board.
       final order = LevelSolver.solve(level.arrows, level.gridSize).solution;
       final remaining = [...level.arrows];
       for (final id in order) {
         final a = remaining.firstWhere((x) => x.id == id);
-        expect(LevelSolver.canEscape(a, remaining, level.gridSize), isTrue,
-            reason: '$reason $id');
+        expect(
+          LevelSolver.canEscape(a, remaining, level.gridSize),
+          isTrue,
+          reason: '$reason $id',
+        );
         remaining.remove(a);
       }
       expect(remaining, isEmpty, reason: reason);
@@ -429,23 +458,31 @@ void main() {
 
     test('rejects overlaps, broken paths and arrows outside the picture', () {
       expect(
-        LevelValidator.problems(board([
-          arrow('a', [(0, 0), (0, 1), (0, 2)]),
-          arrow('b', [(1, 2), (0, 2), (0, 3)]),
-        ])),
+        LevelValidator.problems(
+          board([
+            arrow('a', [(0, 0), (0, 1), (0, 2)]),
+            arrow('b', [(1, 2), (0, 2), (0, 3)]),
+          ]),
+        ),
         contains(contains('overlaps')),
       );
       expect(
-        LevelValidator.problems(board([
-          arrow('a', [(0, 0), (0, 2), (0, 3)]), // skips a cell
-        ])),
+        LevelValidator.problems(
+          board([
+            arrow('a', [(0, 0), (0, 2), (0, 3)]), // skips a cell
+          ]),
+        ),
         contains(contains('malformed')),
       );
       expect(
-        LevelValidator.problems(board(
-          [arrow('a', [(0, 0), (0, 1), (0, 2)])],
-          shape: {(0, 0), (0, 1)},
-        )),
+        LevelValidator.problems(
+          board(
+            [
+              arrow('a', [(0, 0), (0, 1), (0, 2)]),
+            ],
+            shape: {(0, 0), (0, 1)},
+          ),
+        ),
         contains(contains('leaves the silhouette')),
       );
     });
@@ -462,7 +499,10 @@ void main() {
     });
 
     test('rejects a picture the arrows leave mostly empty', () {
-      final shape = {for (var c = 0; c < 8; c++) for (var r = 0; r < 3; r++) (r, c)};
+      final shape = {
+        for (var c = 0; c < 8; c++)
+          for (var r = 0; r < 3; r++) (r, c),
+      };
       final level = board([
         arrow('a', [(0, 0), (0, 1), (0, 2)]),
       ], shape: shape);
@@ -472,8 +512,11 @@ void main() {
 
   test('Restart regenerates the identical board', () {
     for (final n in [1, 57, 163]) {
-      expect(_boardKey(_campaign(n)), equals(_boardKey(_campaign(n))),
-          reason: 'Level $n');
+      expect(
+        _boardKey(_campaign(n)),
+        equals(_boardKey(_campaign(n))),
+        reason: 'Level $n',
+      );
     }
   });
 }

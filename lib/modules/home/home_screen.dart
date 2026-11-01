@@ -1,10 +1,11 @@
+import 'dart:ui' show PathMetric;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/design_tokens.dart';
-import '../../data/models/arrow_direction.dart';
 import '../../game/config/difficulty_curve.dart';
 import '../../services/economy_service.dart';
 import '../../widgets/app_card.dart';
@@ -72,27 +73,31 @@ class HomeScreen extends StatelessWidget {
                               const SizedBox(height: AppSpacing.xl),
                               // Read the observables inside each Obx builder;
                               // reads in a child's build() are not tracked.
-                              Obx(() => _ProgressCard(
-                                    world: controller.currentWorld,
-                                    done: controller.levelsCompleted.value,
-                                    stars: controller.totalStars.value,
-                                    maxStars: controller.maxStars,
-                                  )),
+                              Obx(
+                                () => _ProgressCard(
+                                  world: controller.currentWorld,
+                                  done: controller.levelsCompleted.value,
+                                  stars: controller.totalStars.value,
+                                  maxStars: controller.maxStars,
+                                ),
+                              ),
                               const SizedBox(height: AppSpacing.lg),
-                              Obx(() => _PlayButton(
-                                    level: controller.currentLevel,
-                                    isResuming: controller.isResuming,
-                                    campaignComplete:
-                                        controller.campaignComplete,
-                                    hasProgress: controller.hasProgress,
-                                    onPlay: () => controller.campaignComplete &&
-                                            !controller.isResuming
-                                        ? open('/level-select')
-                                        : open(
-                                            '/gameplay',
-                                            arguments: controller.currentLevel,
-                                          ),
-                                  )),
+                              Obx(
+                                () => _PlayButton(
+                                  level: controller.currentLevel,
+                                  isResuming: controller.isResuming,
+                                  campaignComplete: controller.campaignComplete,
+                                  hasProgress: controller.hasProgress,
+                                  onPlay: () =>
+                                      controller.campaignComplete &&
+                                          !controller.isResuming
+                                      ? open('/level-select')
+                                      : open(
+                                          '/gameplay',
+                                          arguments: controller.currentLevel,
+                                        ),
+                                ),
+                              ),
                               const SizedBox(height: AppSpacing.md),
                               SecondaryButton(
                                 label: AppStrings.levelMap,
@@ -100,11 +105,13 @@ class HomeScreen extends StatelessWidget {
                                 onTap: () => open('/level-select'),
                               ),
                               const SizedBox(height: AppSpacing.lg),
-                              Obx(() => _DailyCard(
-                                    done: controller.dailyDoneToday.value,
-                                    streak: controller.dailyStreak.value,
-                                    onTap: () => open('/daily-challenge'),
-                                  )),
+                              Obx(
+                                () => _DailyCard(
+                                  done: controller.dailyDoneToday.value,
+                                  streak: controller.dailyStreak.value,
+                                  onTap: () => open('/daily-challenge'),
+                                ),
+                              ),
                               const SizedBox(height: AppSpacing.lg),
                             ],
                           ),
@@ -180,9 +187,7 @@ class _Title extends StatelessWidget {
       child: ExcludeSemantics(
         child: Column(
           children: [
-            const FittedBox(
-              child: Text('ARROW', style: AppTextStyles.display),
-            ),
+            const FittedBox(child: Text('ARROW', style: AppTextStyles.display)),
             ShaderMask(
               shaderCallback: (bounds) =>
                   AppGradients.primary.createShader(bounds),
@@ -275,13 +280,13 @@ class _ProgressCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              const Icon(Icons.star_rounded,
-                  size: 16, color: AppColors.starGold),
-              const SizedBox(width: 2),
-              Text(
-                '$stars / $maxStars',
-                style: AppTextStyles.caption,
+              const Icon(
+                Icons.star_rounded,
+                size: 16,
+                color: AppColors.starGold,
               ),
+              const SizedBox(width: 2),
+              Text('$stars / $maxStars', style: AppTextStyles.caption),
             ],
           ),
         ],
@@ -420,10 +425,8 @@ class _HeroIllustrationState extends State<_HeroIllustration>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 2),
-  )..repeat(reverse: true);
-  late final Animation<double> _anim =
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    duration: const Duration(milliseconds: 3600),
+  )..repeat();
 
   @override
   void dispose() {
@@ -436,10 +439,10 @@ class _HeroIllustrationState extends State<_HeroIllustration>
     return ExcludeSemantics(
       child: RepaintBoundary(
         child: AnimatedBuilder(
-          animation: _anim,
+          animation: _controller,
           builder: (_, _) => CustomPaint(
             size: const Size(200, 100),
-            painter: _HeroPainter(t: _anim.value),
+            painter: _HeroPainter(t: _controller.value),
           ),
         ),
       ),
@@ -447,78 +450,191 @@ class _HeroIllustrationState extends State<_HeroIllustration>
   }
 }
 
+/// A tiny playable-looking board: navy arrows on a dot grid, and a blue arrow
+/// that gets tapped and slides out along its clear lane, on a loop.
 class _HeroPainter extends CustomPainter {
+  /// Position in the loop, 0 to 1.
   final double t;
 
   const _HeroPainter({required this.t});
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+  static const double _cell = 25;
+  static const double _stroke = 6.5;
+  static const double _headLength = 12;
 
-    // Snake 1: main dark navy snake path with two 90-degree turns
-    p.color = AppColors.navyDark;
-    final x1 = 15.0 + t * 14;
-    final path1 = Path()
-      ..moveTo(x1, 75)
-      ..lineTo(x1 + 55, 75)
-      ..lineTo(x1 + 55, 30)
-      ..lineTo(x1 + 115, 30);
-    canvas.drawPath(path1, p);
-    _drawHead(canvas, Offset(x1 + 115, 30), AppColors.accentBlue,
-        ArrowDirection.right);
+  // (row, col) cells, tail to head, like ArrowModel.points.
+  static const List<List<(int, int)>> _navy = [
+    [(2, 1), (3, 1), (3, 0), (2, 0), (1, 0)],
+    [(0, 6), (0, 5), (0, 4), (0, 3), (0, 2), (1, 2), (1, 1)],
+    [(2, 5), (2, 6), (2, 7), (3, 7), (3, 6), (3, 5), (3, 4)],
+  ];
+  static const List<(int, int)> _blue = [
+    (3, 2),
+    (2, 2),
+    (2, 3),
+    (1, 3),
+    (1, 4),
+  ];
 
-    // Snake 2: secondary snake with a 90-degree turn
-    p.color = AppColors.navyDark.withValues(alpha: 0.55);
-    final path2 = Path()
-      ..moveTo(135, 15)
-      ..lineTo(135, 55)
-      ..lineTo(175, 55)
-      ..lineTo(175, 85);
-    canvas.drawPath(path2, p);
-    _drawHead(canvas, const Offset(175, 85), AppColors.accentPurple,
-        ArrowDirection.down);
+  static Offset _centre((int, int) p) =>
+      Offset((p.$2 + 0.5) * _cell, (p.$1 + 0.5) * _cell);
+
+  /// Polyline through [pts] with rounded corners.
+  static Path _rounded(List<Offset> pts) {
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    const radius = _cell * 0.3;
+    for (var i = 1; i < pts.length - 1; i++) {
+      final corner = pts[i];
+      final toPrev = pts[i - 1] - corner;
+      final toNext = pts[i + 1] - corner;
+      final inPoint = corner + toPrev / toPrev.distance * radius;
+      final outPoint = corner + toNext / toNext.distance * radius;
+      path.lineTo(inPoint.dx, inPoint.dy);
+      path.quadraticBezierTo(corner.dx, corner.dy, outPoint.dx, outPoint.dy);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
+    return path;
   }
 
-  void _drawHead(Canvas canvas, Offset tip, Color color, ArrowDirection dir) {
-    final hp = Paint()
+  /// Draws the stretch [from]..[to] of [track] as an arrow whose tip is at [to].
+  void _drawArrow(
+    Canvas canvas,
+    PathMetric track,
+    double from,
+    double to,
+    Color color,
+  ) {
+    final tangent = track.getTangentForOffset(to);
+    if (tangent == null) return;
+    final body = Paint()
       ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path();
-    const hs = 13.0;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(track.extractPath(from, to - _headLength * 0.7), body);
 
-    switch (dir) {
-      case ArrowDirection.right:
-        path
-          ..moveTo(tip.dx, tip.dy)
-          ..lineTo(tip.dx - hs, tip.dy - hs * 0.55)
-          ..lineTo(tip.dx - hs * 0.85, tip.dy)
-          ..lineTo(tip.dx - hs, tip.dy + hs * 0.55);
-      case ArrowDirection.left:
-        path
-          ..moveTo(tip.dx, tip.dy)
-          ..lineTo(tip.dx + hs, tip.dy - hs * 0.55)
-          ..lineTo(tip.dx + hs * 0.85, tip.dy)
-          ..lineTo(tip.dx + hs, tip.dy + hs * 0.55);
-      case ArrowDirection.down:
-        path
-          ..moveTo(tip.dx, tip.dy)
-          ..lineTo(tip.dx - hs * 0.55, tip.dy - hs)
-          ..lineTo(tip.dx, tip.dy - hs * 0.85)
-          ..lineTo(tip.dx + hs * 0.55, tip.dy - hs);
-      case ArrowDirection.up:
-        path
-          ..moveTo(tip.dx, tip.dy)
-          ..lineTo(tip.dx - hs * 0.55, tip.dy + hs)
-          ..lineTo(tip.dx, tip.dy + hs * 0.85)
-          ..lineTo(tip.dx + hs * 0.55, tip.dy + hs);
+    final tip = tangent.position;
+    final dir = tangent.vector;
+    final normal = Offset(-dir.dy, dir.dx);
+    final base = tip - dir * _headLength;
+    canvas.drawPath(
+      Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(
+          base.dx + normal.dx * _headLength * 0.62,
+          base.dy + normal.dy * _headLength * 0.62,
+        )
+        ..lineTo(
+          base.dx - normal.dx * _headLength * 0.62,
+          base.dy - normal.dy * _headLength * 0.62,
+        )
+        ..close(),
+      Paint()
+        ..color = color
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = 2
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  /// [t] mapped so it runs 0 to 1 between [start] and [end].
+  double _phase(double start, double end) =>
+      ((t - start) / (end - start)).clamp(0.0, 1.0);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
+
+    // Timeline: rest, tap ripple, slide out, empty beat, fade back in.
+    final ripple = _phase(0.22, 0.42);
+    final slide = Curves.easeInCubic.transform(_phase(0.36, 0.68));
+    final appear = Curves.easeOut.transform(_phase(0.84, 1.0));
+    final gone = t >= 0.68;
+    final opacity = gone ? appear : 1.0;
+
+    final dot = Paint()..color = AppColors.navyDark.withValues(alpha: 0.12);
+    for (var r = 0; r < 4; r++) {
+      for (var c = 0; c < 8; c++) {
+        canvas.drawCircle(_centre((r, c)), 1.6, dot);
+      }
     }
-    path.close();
-    canvas.drawPath(path, hp);
+
+    // The clear lane lights up while the arrow is about to use it.
+    final laneGlow = t < 0.36 ? _phase(0.0, 0.2) : 1 - _phase(0.5, 0.68);
+    if (laneGlow > 0) {
+      final lane = Paint()
+        ..color = AppColors.accentBlue.withValues(alpha: 0.45 * laneGlow);
+      for (var c = 5; c < 8; c++) {
+        canvas.drawCircle(_centre((1, c)), 2.6, lane);
+      }
+    }
+
+    for (final points in _navy) {
+      final centres = points.map(_centre).toList();
+      final dir = centres.last - centres[centres.length - 2];
+      final path = _rounded([
+        ...centres.sublist(0, centres.length - 1),
+        centres.last + dir / dir.distance * (_cell * 0.35),
+      ]);
+      final metric = path.computeMetrics().first;
+      _drawArrow(canvas, metric, 0, metric.length, AppColors.navyDark);
+    }
+
+    // The track runs along the arrow's path and on past the board edge.
+    final centres = _blue.map(_centre).toList();
+    final restTip = centres.last + const Offset(_cell * 0.35, 0);
+    final rest = _rounded([
+      ...centres.sublist(0, centres.length - 1),
+      restTip,
+    ]).computeMetrics().first;
+    final length = rest.length;
+    final track = _rounded([
+      ...centres.sublist(0, centres.length - 1),
+      Offset(size.width + length + _cell, restTip.dy),
+    ]).computeMetrics().first;
+    final shift = gone ? 0.0 : (track.length - length) * slide;
+
+    if (ripple > 0 && ripple < 1) {
+      canvas.drawCircle(
+        centres[2],
+        4 + ripple * 20,
+        Paint()
+          ..color = AppColors.accentBlue.withValues(alpha: 0.4 * (1 - ripple))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+    }
+
+    if (opacity > 0) {
+      if (slide > 0 && !gone) {
+        canvas.drawPath(
+          track.extractPath((shift - 36).clamp(0.0, track.length), shift),
+          Paint()
+            ..color = AppColors.accentBlue.withValues(alpha: 0.3)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = _stroke
+            ..strokeCap = StrokeCap.round
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+      }
+      canvas.drawPath(
+        track.extractPath(shift, shift + length),
+        Paint()
+          ..color = AppColors.accentBlue.withValues(alpha: 0.28 * opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _stroke + 3
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      // One layer, so body and head fade together without a darker overlap.
+      canvas.saveLayer(
+        Offset.zero & size,
+        Paint()..color = Colors.black.withValues(alpha: opacity),
+      );
+      _drawArrow(canvas, track, shift, shift + length, AppColors.accentBlue);
+      canvas.restore();
+    }
   }
 
   @override

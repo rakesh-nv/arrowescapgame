@@ -6,10 +6,10 @@ class AppConstants {
   /// Largest board of the first [classicLevels] levels. Those levels keep this
   /// cap forever so their boards (and saved games on them) never change.
   /// Board size per level comes from DifficultyCurve.
-  static const int maxGridSize = 60;
+  static const int maxGridSize = 90;
 
   /// Largest board in the campaign, reached at the final level.
-  static const int finalMaxGridSize = 96;
+  static const int finalMaxGridSize = 144;
 
   /// Levels that shipped before the campaign was extended. Their generation
   /// inputs are frozen: new keyframes, shapes and board caps only apply
@@ -35,7 +35,7 @@ class AppConstants {
   /// Bumped whenever generation changes the board a level produces. Saved
   /// in-progress games from another version are discarded, because their
   /// removed-arrow ids refer to a different board.
-  static const int levelGeneratorVersion = 8;
+  static const int levelGeneratorVersion = 9;
 
   // Solver
   static const int solverMaxIterations = 100000;

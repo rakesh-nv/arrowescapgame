@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
@@ -105,8 +106,19 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     );
     _progression.addListener(_followTravel);
 
+    // A second map can be opened over this one (pause menu → Level Map), and
+    // its initState bumps this version mid-build, so wait for the frame then.
     _progressWorker = ever(controller.progressVersion, (_) {
-      if (mounted) setState(() {});
+      void rebuild() {
+        if (mounted) setState(() {});
+      }
+
+      if (WidgetsBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => rebuild());
+      } else {
+        rebuild();
+      }
     });
   }
 

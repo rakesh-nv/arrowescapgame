@@ -40,8 +40,7 @@ class _FakeStorage extends StorageService {
 /// unlocked.
 PlayerProgress _progressThrough(int cleared, {Map<int, int>? stars}) =>
     PlayerProgress(
-      highestUnlockedLevel:
-          (cleared + 1).clamp(1, AppConstants.totalLevels),
+      highestUnlockedLevel: (cleared + 1).clamp(1, AppConstants.totalLevels),
       levelStars: stars ?? {for (var l = 1; l <= cleared; l++) l: 3},
       coins: 345,
       hints: 3,
@@ -80,12 +79,12 @@ class _GameplayProbe extends StatelessWidget {
 }
 
 Widget _app() => GetMaterialApp(
-      initialRoute: '/',
-      getPages: [
-        GetPage(name: '/', page: () => const LevelSelectScreen()),
-        GetPage(name: '/gameplay', page: () => const _GameplayProbe()),
-      ],
-    );
+  initialRoute: '/',
+  getPages: [
+    GetPage(name: '/', page: () => const LevelSelectScreen()),
+    GetPage(name: '/gameplay', page: () => const _GameplayProbe()),
+  ],
+);
 
 void main() {
   setUp(() {
@@ -105,8 +104,10 @@ void main() {
         expect(layout.sections.first.firstLevel, 1);
         expect(layout.sections.last.lastLevel, AppConstants.totalLevels);
         for (var i = 1; i < layout.sections.length; i++) {
-          expect(layout.sections[i].firstLevel,
-              layout.sections[i - 1].lastLevel + 1);
+          expect(
+            layout.sections[i].firstLevel,
+            layout.sections[i - 1].lastLevel + 1,
+          );
           expect(layout.sections[i].bottom, layout.sections[i - 1].top);
         }
 
@@ -161,12 +162,16 @@ void main() {
       expect(layout.trailPoint(10, 0), layout.point(10));
       expect(layout.trailPoint(10, 1), layout.point(11));
       final mid = layout.trailPoint(10, 0.5);
-      expect(mid.dy, inExclusiveRange(layout.point(10).dy, layout.point(11).dy));
+      expect(
+        mid.dy,
+        inExclusiveRange(layout.point(10).dy, layout.point(11).dy),
+      );
     });
 
     test('one region per world, distinct names', () {
       final names = {
-        for (final w in DifficultyCurve.worlds) MapBiome.forWorld(w.number).name,
+        for (final w in DifficultyCurve.worlds)
+          MapBiome.forWorld(w.number).name,
       };
       expect(names.length, DifficultyCurve.worlds.length);
       expect(MapBiome.forWorld(1).kind, BiomeKind.forest);
@@ -176,10 +181,9 @@ void main() {
 
   group('LevelSelectController node states', () {
     test('follow saved progress and never unlock anything', () {
-      final storage = _register(_progressThrough(
-        4,
-        stars: {1: 3, 2: 2, 3: 1, 4: 3},
-      ));
+      final storage = _register(
+        _progressThrough(4, stars: {1: 3, 2: 2, 3: 1, 4: 3}),
+      );
       final c = Get.put(LevelSelectController());
       expect(c.nodeState(1), MapNodeState.completed);
       expect(c.nodeState(4), MapNodeState.completed);
@@ -192,7 +196,9 @@ void main() {
     });
 
     test('an unlocked gap shows as available', () {
-      _register(PlayerProgress(highestUnlockedLevel: 6, levelStars: {1: 3, 2: 3}));
+      _register(
+        PlayerProgress(highestUnlockedLevel: 6, levelStars: {1: 3, 2: 3}),
+      );
       final c = Get.put(LevelSelectController());
       expect(c.nodeState(3), MapNodeState.available);
       expect(c.nodeState(6), MapNodeState.current);
@@ -232,8 +238,9 @@ void main() {
   });
 
   group('LevelSelectScreen', () {
-    testWidgets('opens on the current level and starts it from the sheet',
-        (tester) async {
+    testWidgets('opens on the current level and starts it from the sheet', (
+      tester,
+    ) async {
       await _setScreen(tester, const Size(360, 640));
       final storage = _register(_progressThrough(56));
       await tester.pumpWidget(_app());
@@ -263,8 +270,9 @@ void main() {
       expect(storage.progress.coins, 345);
     });
 
-    testWidgets('locked levels explain how to unlock and do not navigate',
-        (tester) async {
+    testWidgets('locked levels explain how to unlock and do not navigate', (
+      tester,
+    ) async {
       await _setScreen(tester, const Size(360, 640));
       final storage = _register(_progressThrough(56));
       await tester.pumpWidget(_app());
@@ -280,19 +288,48 @@ void main() {
       expect(storage.progress.highestUnlockedLevel, 57);
     });
 
+    testWidgets('a second map opened over the first builds without error', (
+      tester,
+    ) async {
+      await _setScreen(tester, const Size(390, 844));
+      _register(_progressThrough(5));
+      await tester.pumpWidget(_app());
+      await tester.pump(const Duration(milliseconds: 100));
+
+      Navigator.of(tester.element(find.byType(LevelSelectScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const LevelSelectScreen()),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byType(LevelSelectScreen, skipOffstage: false),
+        findsNWidgets(2),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('world navigation scrolls between regions', (tester) async {
       await _setScreen(tester, const Size(360, 640));
       _register(_progressThrough(0));
       await tester.pumpWidget(_app());
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('1'), findsOneWidget);
-      expect(find.text('${'World'} 1 · ${MapBiome.forWorld(1).name}'), findsOneWidget);
+      expect(
+        find.text('${'World'} 1 · ${MapBiome.forWorld(1).name}'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byTooltip('Next world'));
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(find.text('World 2 · ${MapBiome.forWorld(2).name}'), findsOneWidget);
+      expect(
+        find.text('World 2 · ${MapBiome.forWorld(2).name}'),
+        findsOneWidget,
+      );
       expect(find.text('26'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Current level'));
@@ -302,8 +339,9 @@ void main() {
       expect(find.text('1'), findsOneWidget);
     });
 
-    testWidgets('plays the progression animation once and disposes cleanly',
-        (tester) async {
+    testWidgets('plays the progression animation once and disposes cleanly', (
+      tester,
+    ) async {
       await _setScreen(tester, const Size(412, 915));
       _register(_progressThrough(25));
       LevelSelectController.justCompletedLevel.value = 25;
@@ -314,7 +352,10 @@ void main() {
       expect(LevelSelectController.lastAnimatedLevel, 25);
       // The camera followed the marker into the next world.
       expect(find.text('26'), findsOneWidget);
-      expect(find.text('World 2 · ${MapBiome.forWorld(2).name}'), findsOneWidget);
+      expect(
+        find.text('World 2 · ${MapBiome.forWorld(2).name}'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       // Leaving the screen must stop every controller (a ticker left
@@ -323,9 +364,14 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
 
-    for (final size in const [Size(320, 568), Size(360, 640), Size(800, 1280)]) {
-      testWidgets('renders without overflow at ${size.width}x${size.height}',
-          (tester) async {
+    for (final size in const [
+      Size(320, 568),
+      Size(360, 640),
+      Size(800, 1280),
+    ]) {
+      testWidgets('renders without overflow at ${size.width}x${size.height}', (
+        tester,
+      ) async {
         await _setScreen(tester, size);
         tester.platformDispatcher.textScaleFactorTestValue = 1.3;
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -339,4 +385,3 @@ void main() {
     }
   });
 }
-

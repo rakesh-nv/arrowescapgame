@@ -1,3 +1,7 @@
+// Boards are played in real time, and level 1 alone has 70 arrows.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'package:arrowescapegame/core/constants/app_constants.dart';
 import 'package:arrowescapegame/data/models/player_progress.dart';
 import 'package:arrowescapegame/data/repositories/level_repository.dart';
@@ -100,96 +104,112 @@ void main() {
     expect(analytics.count(AnalyticsEvent.levelQuit), 0);
     expect(analytics.count(AnalyticsEvent.gameSessionEnd), 1);
     expect(
-      analytics.last(AnalyticsEvent.gameSessionEnd)[AnalyticsParam
-          .levelsCompleted],
+      analytics.last(
+        AnalyticsEvent.gameSessionEnd,
+      )[AnalyticsParam.levelsCompleted],
       1,
     );
   });
 
-  test('failing logs level_fail once; retry restarts as a new attempt',
-      () async {
-    final gc = Get.put(GameplayController());
-    await gc.loadLevel(5);
-    final level = LevelRepository.getLevel(5);
-    final free = LevelSolver.getAvailableArrows(level.arrows, level.gridSize)
-        .map((a) => a.id)
-        .toSet();
-    final blocked = level.arrows.firstWhere((a) => !free.contains(a.id)).id;
+  test(
+    'failing logs level_fail once; retry restarts as a new attempt',
+    () async {
+      final gc = Get.put(GameplayController());
+      await gc.loadLevel(5);
+      final level = LevelRepository.getLevel(5);
+      final free = LevelSolver.getAvailableArrows(
+        level.arrows,
+        level.gridSize,
+      ).map((a) => a.id).toSet();
+      final blocked = level.arrows.firstWhere((a) => !free.contains(a.id)).id;
 
-    for (var i = 0; i < AppConstants.startingLives; i++) {
-      gc.onArrowTap(blocked);
-      await Future.delayed(
-        const Duration(milliseconds: AppConstants.blockedAnimDurationMs + 200),
+      for (var i = 0; i < AppConstants.startingLives; i++) {
+        gc.onArrowTap(blocked);
+        await Future.delayed(
+          const Duration(
+            milliseconds: AppConstants.blockedAnimDurationMs + 200,
+          ),
+        );
+      }
+      expect(gc.isGameOver.value, isTrue);
+      expect(analytics.count(AnalyticsEvent.levelFail), 1);
+      expect(
+        analytics.last(AnalyticsEvent.levelFail)[AnalyticsParam.mistakeCount],
+        AppConstants.startingLives,
       );
-    }
-    expect(gc.isGameOver.value, isTrue);
-    expect(analytics.count(AnalyticsEvent.levelFail), 1);
-    expect(
-      analytics.last(AnalyticsEvent.levelFail)[AnalyticsParam.mistakeCount],
-      AppConstants.startingLives,
-    );
-    final firstAttempt =
-        analytics.last(AnalyticsEvent.levelStart)[AnalyticsParam.attemptNumber]
-            as int;
+      final firstAttempt =
+          analytics.last(
+                AnalyticsEvent.levelStart,
+              )[AnalyticsParam.attemptNumber]
+              as int;
 
-    gc.onReset();
-    expect(analytics.last(AnalyticsEvent.levelRestart)[AnalyticsParam.reason],
-        'retry');
-    expect(analytics.count(AnalyticsEvent.levelStart), 2);
-    expect(
-      analytics.last(AnalyticsEvent.levelStart)[AnalyticsParam.attemptNumber],
-      firstAttempt + 1,
-    );
+      gc.onReset();
+      expect(
+        analytics.last(AnalyticsEvent.levelRestart)[AnalyticsParam.reason],
+        'retry',
+      );
+      expect(analytics.count(AnalyticsEvent.levelStart), 2);
+      expect(
+        analytics.last(AnalyticsEvent.levelStart)[AnalyticsParam.attemptNumber],
+        firstAttempt + 1,
+      );
 
-    // Leaving the fresh attempt is a quit, reported once.
-    await Get.delete<GameplayController>();
-    expect(analytics.count(AnalyticsEvent.levelQuit), 1);
-    expect(analytics.count(AnalyticsEvent.levelFail), 1);
-  });
+      // Leaving the fresh attempt is a quit, reported once.
+      await Get.delete<GameplayController>();
+      expect(analytics.count(AnalyticsEvent.levelQuit), 1);
+      expect(analytics.count(AnalyticsEvent.levelFail), 1);
+    },
+  );
 
-  test('pause, resume, hint, undo and next level are logged once each',
-      () async {
-    final gc = Get.put(GameplayController());
-    await gc.loadLevel(3);
-    final level = LevelRepository.getLevel(3);
+  test(
+    'pause, resume, hint, undo and next level are logged once each',
+    () async {
+      final gc = Get.put(GameplayController());
+      await gc.loadLevel(3);
+      final level = LevelRepository.getLevel(3);
 
-    gc.onPauseOpened();
-    gc.onPauseClosed(resumed: true);
-    gc.onPauseOpened();
-    gc.onPauseClosed(resumed: false);
-    expect(analytics.count(AnalyticsEvent.pauseGame), 2);
-    expect(analytics.count(AnalyticsEvent.resumeGame), 1);
+      gc.onPauseOpened();
+      gc.onPauseClosed(resumed: true);
+      gc.onPauseOpened();
+      gc.onPauseClosed(resumed: false);
+      expect(analytics.count(AnalyticsEvent.pauseGame), 2);
+      expect(analytics.count(AnalyticsEvent.resumeGame), 1);
 
-    expect(gc.onHint(), isTrue);
-    expect(analytics.count(AnalyticsEvent.hintUsed), 1);
+      expect(gc.onHint(), isTrue);
+      expect(analytics.count(AnalyticsEvent.hintUsed), 1);
 
-    final free = LevelSolver.getAvailableArrows(level.arrows, level.gridSize);
-    gc.onArrowTap(free.first.id);
-    await _escapeWait();
-    gc.onUndo();
-    expect(analytics.count(AnalyticsEvent.undoUsed), 1);
-
-    final order = LevelSolver.solve(level.arrows, level.gridSize).solution;
-    for (final id in order) {
-      gc.onArrowTap(id);
+      final free = LevelSolver.getAvailableArrows(level.arrows, level.gridSize);
+      gc.onArrowTap(free.first.id);
       await _escapeWait();
-    }
-    expect(analytics.count(AnalyticsEvent.levelComplete), 1);
-    expect(
-      analytics.last(AnalyticsEvent.levelComplete)[AnalyticsParam.hintCount],
-      1,
-    );
+      gc.onUndo();
+      expect(analytics.count(AnalyticsEvent.undoUsed), 1);
 
-    gc.loadNextLevel();
-    await Future.delayed(Duration.zero);
-    while (gc.isLoadingLevel.value) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-    expect(analytics.count(AnalyticsEvent.nextLevel), 1);
-    expect(analytics.last(AnalyticsEvent.nextLevel)[AnalyticsParam.fromLevel],
-        3);
-    expect(analytics.last(AnalyticsEvent.levelStart)[AnalyticsParam.levelNumber],
-        4);
-    expect(analytics.count(AnalyticsEvent.levelQuit), 0);
-  });
+      final order = LevelSolver.solve(level.arrows, level.gridSize).solution;
+      for (final id in order) {
+        gc.onArrowTap(id);
+        await _escapeWait();
+      }
+      expect(analytics.count(AnalyticsEvent.levelComplete), 1);
+      expect(
+        analytics.last(AnalyticsEvent.levelComplete)[AnalyticsParam.hintCount],
+        1,
+      );
+
+      gc.loadNextLevel();
+      await Future.delayed(Duration.zero);
+      while (gc.isLoadingLevel.value) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      expect(analytics.count(AnalyticsEvent.nextLevel), 1);
+      expect(
+        analytics.last(AnalyticsEvent.nextLevel)[AnalyticsParam.fromLevel],
+        3,
+      );
+      expect(
+        analytics.last(AnalyticsEvent.levelStart)[AnalyticsParam.levelNumber],
+        4,
+      );
+      expect(analytics.count(AnalyticsEvent.levelQuit), 0);
+    },
+  );
 }

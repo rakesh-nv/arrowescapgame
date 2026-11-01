@@ -167,7 +167,7 @@ class _Key {
     this.blocked,
     this.arrows,
     this.cells, [
-    this.maxGrid = AppConstants.maxGridSize + 0.0,
+    this.maxGrid = 60.0,
   ]);
 }
 
@@ -205,6 +205,10 @@ class DifficultyCurve {
   // level 1,000: pictures of ~3,750 playable cells on boards up to 96×96,
   // ~190+ arrows averaging ~19 cells (the longest 60–100), and twice the
   // planning waves of level 200.
+  //
+  // Every board is then enlarged by [_sizeScale] (see [forLevel]); the numbers
+  // above describe the table before that. Which picture a level shows is
+  // always chosen from the table as written, so scaling never changes it.
   static const List<_Key> _keys = [
     _Key(1, 26, 0.94, 8.0, 14, 24, 3.4, 4, 0.88, 5.5, 0.56, 38, 380),
     _Key(15, 28, 0.94, 8.6, 16, 28, 3.6, 5, 0.88, 6.0, 0.58, 42, 440),
@@ -272,9 +276,44 @@ class DifficultyCurve {
     orElse: () => level < 1 ? worlds.first : worlds.last,
   );
 
+  /// Classic board cap of [_keys], the fixed reference for picture selection.
+  static const int _tableCap = 60;
+
+  /// How much larger than [_keys] boards are: board side, arrow count and
+  /// arrow length each grow by this, so playable cells grow by its square.
+  static const double _sizeScale = 1.5;
+
+  /// Playable cells of the table as written, from a scaled [targetCells].
+  /// Picture selection uses this so scaling cannot change the picture.
+  static int unscaledCells(int targetCells) =>
+      (targetCells / (_sizeScale * _sizeScale)).round();
+
   /// Board parameters for campaign [level]. Levels beyond the last keyframe
-  /// use the final (mastery) parameters.
+  /// use the final (mastery) parameters. [PuzzleSpec.gridSize] stays nominal:
+  /// the real board side comes from [gridFor].
   static PuzzleSpec forLevel(int level) {
+    final s = _tableSpec(level);
+    int scaled(num x) => (x * _sizeScale).round();
+    return PuzzleSpec(
+      gridSize: s.gridSize,
+      fill: s.fill,
+      avgArrowLen: s.avgArrowLen * _sizeScale,
+      maxTierLen: scaled(s.maxTierLen),
+      maxAbsorbLen: scaled(s.maxAbsorbLen),
+      minAvgBends: s.minAvgBends,
+      minDepth: s.minDepth,
+      minOccupancy: s.minOccupancy,
+      difficulty: s.difficulty,
+      targetRounds: s.targetRounds * _sizeScale,
+      targetBlockedShare: s.targetBlockedShare,
+      arrowFloor: scaled(s.arrowFloor),
+      targetCells: (s.targetCells * _sizeScale * _sizeScale).round(),
+      maxGridSize: scaled(s.maxGridSize),
+    );
+  }
+
+  /// [level]'s row of [_keys], interpolated, before [_sizeScale].
+  static PuzzleSpec _tableSpec(int level) {
     final n = level.clamp(_keys.first.level, _keys.last.level);
     var i = 0;
     while (i < _keys.length - 2 && n > _keys[i + 1].level) {
@@ -348,7 +387,7 @@ class DifficultyCurve {
   static List<Silhouette> silhouettePoolFor(
     int gridSize, {
     int targetCells = 0,
-    int maxGrid = AppConstants.maxGridSize,
+    int maxGrid = _tableCap,
     int level = 1,
   }) => [
     for (final s in SilhouetteLibrary.all)
@@ -361,8 +400,7 @@ class DifficultyCurve {
   /// Share of the target area a shape must reach to join the pool. The
   /// extended campaign asks more, so slim pictures capped by the board do not
   /// make a level suddenly smaller than its neighbours.
-  static double _minAreaShare(int maxGrid) =>
-      maxGrid > AppConstants.maxGridSize ? 0.85 : 0.75;
+  static double _minAreaShare(int maxGrid) => maxGrid > _tableCap ? 0.85 : 0.75;
 
   /// Playable cells [s] offers at the cap [maxGrid], for the pool filter.
   /// Exact up to the classic cap; above it, scaled from the classic cap's
@@ -370,7 +408,7 @@ class DifficultyCurve {
   /// rasterizing every shape at every larger cap made walking the rotation
   /// to level 1,000 take tens of seconds in each fresh isolate.
   static int _poolArea(Silhouette s, int maxGrid) {
-    const ref = AppConstants.maxGridSize;
+    const ref = _tableCap;
     if (maxGrid <= ref) return areaAt(s, maxGrid);
     final scale = maxGrid / ref;
     return (areaAt(s, ref) * scale * scale).round();
@@ -386,10 +424,10 @@ class DifficultyCurve {
   /// Playable cells [s] actually offers on a [gridSize] board. Measured, not
   /// estimated: thin pictures (spiral, bicycle) rasterize fatter on small
   /// boards, so a share taken at one size misjudges another.
-  static int areaAt(Silhouette s, int gridSize) => _areaMemo.putIfAbsent(
-    (s.id, gridSize),
-    () => s.rasterize(gridSize).cells.length,
-  );
+  static int areaAt(Silhouette s, int gridSize) => _areaMemo.putIfAbsent((
+    s.id,
+    gridSize,
+  ), () => s.rasterize(gridSize).cells.length);
 
   /// Board size for [s] at [spec]: the smallest board on which the picture
   /// offers `spec.targetCells` playable cells, so every level gives a similar
@@ -438,7 +476,7 @@ class DifficultyCurve {
     if (level < 1) return silhouetteForSeed(level, forLevel(1).gridSize);
     while (_sequence.length < level) {
       final n = _sequence.length + 1;
-      final spec = forLevel(n);
+      final spec = _tableSpec(n);
       final pool = silhouettePoolFor(
         spec.gridSize,
         targetCells: spec.targetCells,

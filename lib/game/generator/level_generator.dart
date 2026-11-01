@@ -54,6 +54,9 @@ class LevelGenerator {
     _Stage(4, 1, (s, a, n) => s ^ (a * 0x7FFFFFED) ^ 0xBEEF),
     _Stage(4, 2, (s, a, n) => s ^ (a * 0x7FFFFFAB) ^ 0xCAFE),
     _Stage(4, 3, (s, a, n) => s ^ (a * 0x12345678) ^ 0xFEED),
+    // Reached only when every board above had an arrow that could not be
+    // repaired (see ArrowRepair); better than the straight-row fallback.
+    _Stage(32, 3, (s, a, n) => s ^ (a * 0x5BD1E995) ^ 0xD00D),
   ];
 
   /// Board parameters used for [levelNumber], or for [difficulty] when one is
@@ -85,7 +88,7 @@ class LevelGenerator {
     return DifficultyCurve.silhouetteForSeed(
       seed ^ levelNumber,
       spec.gridSize,
-      targetCells: spec.targetCells,
+      targetCells: DifficultyCurve.unscaledCells(spec.targetCells),
     );
   }
 
@@ -115,8 +118,9 @@ class LevelGenerator {
         silhouette ?? _silhouetteFor(levelNumber, seed, difficulty, base);
     // Board size follows the picture: enough cells for the level's target
     // playable area (see DifficultyCurve.gridFor), unless overridden.
-    final spec =
-        base.withGridSize(gridSize ?? DifficultyCurve.gridFor(base, shape));
+    final spec = base.withGridSize(
+      gridSize ?? DifficultyCurve.gridFor(base, shape),
+    );
 
     for (final stage in _stages) {
       // Every valid candidate of a stage competes; the one closest to the

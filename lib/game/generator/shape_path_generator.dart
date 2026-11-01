@@ -1,3 +1,4 @@
+import 'arrow_repair.dart';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -61,7 +62,8 @@ class ShapePathGenerator {
 
     // Attempt to grow paths in interleaved order
     for (final req in targetRequests) {
-      if (occupied.length >= targetOccupied && placedArrows.length >= minArrows) {
+      if (occupied.length >= targetOccupied &&
+          placedArrows.length >= minArrows) {
         break;
       }
 
@@ -233,9 +235,11 @@ class ShapePathGenerator {
   /// at most [maxShare] of all arrows.
   static void _trimStubs(List<ArrowModel> arrows, {required double maxShare}) {
     var stubs = arrows.where((a) => a.length <= 4).length;
-    for (var i = arrows.length - 1;
-        i >= 0 && stubs > (arrows.length * maxShare).floor();
-        i--) {
+    for (
+      var i = arrows.length - 1;
+      i >= 0 && stubs > (arrows.length * maxShare).floor();
+      i--
+    ) {
       if (arrows[i].length <= 4) {
         arrows.removeAt(i);
         stubs--;
@@ -317,10 +321,10 @@ class ShapePathGenerator {
   /// Beyond the classic top tier it stretches up instead.
   static (int, int) _rangeFor(LengthTier tier, int maxTierLen) {
     final base = switch (tier) {
-      LengthTier.short     => (4, 7),
-      LengthTier.medium    => (7, 10),
-      LengthTier.long      => (10, 13),
-      LengthTier.veryLong  => (13, 16),
+      LengthTier.short => (4, 7),
+      LengthTier.medium => (7, 10),
+      LengthTier.long => (10, 13),
+      LengthTier.veryLong => (13, 16),
       LengthTier.extraLong => (16, 22),
     };
     // Past the classic campaign's top tier every tier stretches with it, so
@@ -413,9 +417,7 @@ class ShapePathGenerator {
     // Flat lookups for the hot loops below (record-keyed maps were the cost
     // on 60×60 boards): contour depth, and how many earlier exit rays cross
     // each cell.
-    final rayFreeByDir = [
-      for (final d in ArrowDirection.values) rayFree[d]!,
-    ];
+    final rayFreeByDir = [for (final d in ArrowDirection.values) rayFree[d]!];
     final rayHits = Int32List(n * n);
     blockedExitRays.forEach((cell, rays) {
       final (r, c) = cell;
@@ -486,7 +488,8 @@ class ShapePathGenerator {
             nc < 0 ||
             nc >= n ||
             !free[nr * n + nc] ||
-            pathSet.contains(next)) {
+            pathSet.contains(next) ||
+            _onLane(head, dir, next)) {
           continue;
         }
 
@@ -530,6 +533,14 @@ class ShapePathGenerator {
 
     if (path.length < 2) return null;
     return ArrowModel(id: 'tmp_$arrowIndex', points: path.reversed.toList());
+  }
+
+  /// Whether [cell] lies on the exit lane running from [head] in [dir].
+  static bool _onLane(Cell head, ArrowDirection dir, Cell cell) {
+    final dr = cell.$1 - head.$1;
+    final dc = cell.$2 - head.$2;
+    final along = dr * dir.dRow + dc * dir.dCol;
+    return along > 0 && dr == along * dir.dRow && dc == along * dir.dCol;
   }
 
   /// For each direction, whether the straight ray from each cell (exclusive)
@@ -647,6 +658,7 @@ class ShapePathGenerator {
             if (blockers != null && blockers.any((j) => j > i)) {
               continue;
             }
+            if (_onLane(arrow.points.last, arrow.exitDirection, next)) continue;
 
             placedArrows[i] = ArrowModel(
               id: arrow.id,
@@ -709,6 +721,7 @@ class ShapePathGenerator {
         for (final (t, points) in options) {
           final trial = [...arrows];
           trial[t] = ArrowModel(id: arrows[t].id, points: points);
+          if (ArrowRepair.hitsOwnBody(trial[t], gridSize)) continue;
           trial.removeAt(s);
           if (_waitDepth(trial, gridSize) == depth) {
             arrows
@@ -756,6 +769,7 @@ class ShapePathGenerator {
               id: a.id,
               points: atTail ? [cell, ...a.points] : [...a.points, cell],
             );
+            if (ArrowRepair.hitsOwnBody(trial[i], gridSize)) continue;
             // Filling must not change how hard the board is: the planning
             // depth stays exactly what the main pass built.
             if (_waitDepth(trial, gridSize) != depth) continue;
@@ -790,7 +804,9 @@ class ShapePathGenerator {
     Iterable<Cell> freeAround(Cell c, Set<Cell> taken) sync* {
       for (final d in deltas) {
         final n = (c.$1 + d.$1, c.$2 + d.$2);
-        if (shapeMask.contains(n) && !occupied.contains(n) && !taken.contains(n)) {
+        if (shapeMask.contains(n) &&
+            !occupied.contains(n) &&
+            !taken.contains(n)) {
           yield n;
         }
       }
@@ -814,8 +830,12 @@ class ShapePathGenerator {
       while (path.length < maxArrowLen) {
         final options = freeAround(path.last, taken).toList();
         if (options.isEmpty) break;
-        options.sort((a, b) => freeAround(a, taken).length
-            .compareTo(freeAround(b, taken).length));
+        options.sort(
+          (a, b) => freeAround(
+            a,
+            taken,
+          ).length.compareTo(freeAround(b, taken).length),
+        );
         path.add(options.first);
         taken.add(options.first);
       }
@@ -843,7 +863,8 @@ class ShapePathGenerator {
   static int? _waitDepth(List<ArrowModel> arrows, int gridSize) {
     // Flat arrays rather than maps: the tidy-up passes call this once per
     // candidate change, so on 60×60 boards it must stay cheap.
-    final owner = Int32List(gridSize * gridSize)..fillRange(0, gridSize * gridSize, -1);
+    final owner = Int32List(gridSize * gridSize)
+      ..fillRange(0, gridSize * gridSize, -1);
     for (var i = 0; i < arrows.length; i++) {
       for (final (r, c) in arrows[i].points) {
         owner[r * gridSize + c] = i;
@@ -927,7 +948,8 @@ class ShapePathGenerator {
             final cand = (curr.$1 + d.$1, curr.$2 + d.$2);
             if (shapeMask.contains(cand) &&
                 !occupied.contains(cand) &&
-                !path.contains(cand)) {
+                !path.contains(cand) &&
+                !_onLane(head, dir, cand)) {
               next = cand;
               break;
             }

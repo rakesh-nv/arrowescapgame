@@ -24,12 +24,25 @@ class ArrowRepair {
   ) {
     final out = [...arrows];
     var repaired = 0;
-    for (var i = 0; i < out.length; i++) {
-      if (!hitsOwnBody(out[i], gridSize)) continue;
-      final fixed = _repairArrow(out, i, gridSize);
-      if (fixed == null) return null;
-      out[i] = fixed;
-      repaired++;
+    // An arrow with no solvable route now may get one once others have moved
+    // their lanes, so sweep until a whole pass changes nothing.
+    var pending = [
+      for (var i = 0; i < out.length; i++)
+        if (hitsOwnBody(out[i], gridSize)) i,
+    ];
+    while (pending.isNotEmpty) {
+      final stuck = <int>[];
+      for (final i in pending) {
+        final fixed = _repairArrow(out, i, gridSize);
+        if (fixed == null) {
+          stuck.add(i);
+        } else {
+          out[i] = fixed;
+          repaired++;
+        }
+      }
+      if (stuck.length == pending.length) return null;
+      pending = stuck;
     }
     return (arrows: out, repaired: repaired);
   }

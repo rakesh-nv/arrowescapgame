@@ -71,7 +71,11 @@ void _registerServices() {
   Get.put<IAdService>(NoOpAdService());
 }
 
-Future<void> _setScreen(WidgetTester tester, Size size, double textScale) async {
+Future<void> _setScreen(
+  WidgetTester tester,
+  Size size,
+  double textScale,
+) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.textScaleFactorTestValue = textScale;
@@ -106,10 +110,10 @@ TransformationController _controller(WidgetTester tester) => tester
 
 /// Scene size of one cell, as the board lays itself out.
 double _sceneCell(Size box, int grid) => PuzzleConfig.adaptive(
-      screenWidth: box.width,
-      screenHeight: box.height,
-      overrideGridSize: grid,
-    ).cellSpacing;
+  screenWidth: box.width,
+  screenHeight: box.height,
+  overrideGridSize: grid,
+).cellSpacing;
 
 /// Scene rectangle of the picture (silhouette cells plus half a cell).
 Rect _pictureRect(LevelModel level, double cell) {
@@ -125,9 +129,9 @@ Rect _pictureRect(LevelModel level, double cell) {
 }
 
 Rect _screenRect(Matrix4 m, Rect scene) => Rect.fromPoints(
-      MatrixUtils.transformPoint(m, scene.topLeft),
-      MatrixUtils.transformPoint(m, scene.bottomRight),
-    );
+  MatrixUtils.transformPoint(m, scene.topLeft),
+  MatrixUtils.transformPoint(m, scene.bottomRight),
+);
 
 Offset _cellCentre(Matrix4 m, double cell, (int, int) rc) =>
     MatrixUtils.transformPoint(
@@ -150,7 +154,9 @@ void main() {
           final level = LevelRepository.getLevel(n);
           final boardSize = Size(entry.value.width, entry.value.height * 0.6);
           String? tapped;
-          await tester.pumpWidget(_board(level, boardSize, (id) => tapped = id));
+          await tester.pumpWidget(
+            _board(level, boardSize, (id) => tapped = id),
+          );
           await tester.pump(const Duration(milliseconds: 400));
 
           final tc = _controller(tester);
@@ -169,10 +175,11 @@ void main() {
             greaterThanOrEqualTo(ArrowBoardWidget.fitFraction - 0.01),
           );
           final onScreenCell = cell * tc.value.getMaxScaleOnAxis();
-          // Level 1 (a ~31-cell board) still shows its picture with cells of
-          // 12 dp or more on a 360 dp phone before any zoom.
+          // Level 1 (a ~46-cell board) still shows its picture with cells of
+          // 8.5 dp or more on a 360 dp phone before any zoom; a tap between
+          // arrows magnifies the board.
           if (n == 1 && entry.value.width >= 360) {
-            expect(onScreenCell, greaterThanOrEqualTo(12));
+            expect(onScreenCell, greaterThanOrEqualTo(8.5));
           }
 
           // Tapping the centre of an arrow's cell either hits that arrow or,
@@ -191,58 +198,68 @@ void main() {
           expect(tapped, target.id);
           if (onScreenCell >= 22) {
             // Comfortable cells never need the magnify step.
-            expect(tc.value.getMaxScaleOnAxis(), closeTo(onScreenCell / cell, 1e-6));
+            expect(
+              tc.value.getMaxScaleOnAxis(),
+              closeTo(onScreenCell / cell, 1e-6),
+            );
           }
         });
       }
     }
   });
 
-  testWidgets('idle arrows share one layer; only animated arrows get a widget',
-      (tester) async {
-    final level = LevelRepository.getLevel(200);
-    const size = Size(412, 600);
-    Widget board({String? hinted, List<ArrowModel>? arrows}) => MaterialApp(
-          home: Scaffold(
-            body: SizedBox.fromSize(
-              size: size,
-              child: ArrowBoardWidget(
-                arrows: arrows ?? level.arrows,
-                gridSize: level.gridSize,
-                shapeCells: level.shapeCells,
-                theme: ThemeRepository.allThemes.first,
-                hintedArrowId: hinted,
-                onArrowTap: (_) {},
-              ),
+  testWidgets(
+    'idle arrows share one layer; only animated arrows get a widget',
+    (tester) async {
+      final level = LevelRepository.getLevel(200);
+      const size = Size(412, 600);
+      Widget board({String? hinted, List<ArrowModel>? arrows}) => MaterialApp(
+        home: Scaffold(
+          body: SizedBox.fromSize(
+            size: size,
+            child: ArrowBoardWidget(
+              arrows: arrows ?? level.arrows,
+              gridSize: level.gridSize,
+              shapeCells: level.shapeCells,
+              theme: ThemeRepository.allThemes.first,
+              hintedArrowId: hinted,
+              onArrowTap: (_) {},
             ),
           ),
-        );
+        ),
+      );
 
-    await tester.pumpWidget(board());
-    await tester.pump(const Duration(milliseconds: 400));
-    // A large board: dozens of arrows, none with its own widget or tickers.
-    expect(level.arrows.length, greaterThan(60));
-    expect(find.byType(ArrowWidget), findsNothing);
+      await tester.pumpWidget(board());
+      await tester.pump(const Duration(milliseconds: 400));
+      // A large board: dozens of arrows, none with its own widget or tickers.
+      expect(level.arrows.length, greaterThan(60));
+      expect(find.byType(ArrowWidget), findsNothing);
 
-    // A hinted arrow gets its own glowing widget.
-    await tester.pumpWidget(board(hinted: level.arrows.first.id));
-    await tester.pump();
-    expect(find.byType(ArrowWidget), findsOneWidget);
+      // A hinted arrow gets its own glowing widget.
+      await tester.pumpWidget(board(hinted: level.arrows.first.id));
+      await tester.pump();
+      expect(find.byType(ArrowWidget), findsOneWidget);
 
-    // An arrow that starts escaping animates from its first frame.
-    final escapingId = level.arrows[1].id;
-    await tester.pumpWidget(board(arrows: [
-      for (final a in level.arrows)
-        a.id == escapingId ? a.copyWith(state: ArrowState.escaping) : a,
-    ]));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byType(ArrowWidget), findsOneWidget);
-    expect(tester.hasRunningAnimations, isTrue);
-    await tester.pumpAndSettle();
-  });
+      // An arrow that starts escaping animates from its first frame.
+      final escapingId = level.arrows[1].id;
+      await tester.pumpWidget(
+        board(
+          arrows: [
+            for (final a in level.arrows)
+              a.id == escapingId ? a.copyWith(state: ArrowState.escaping) : a,
+          ],
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(ArrowWidget), findsOneWidget);
+      expect(tester.hasRunningAnimations, isTrue);
+      await tester.pumpAndSettle();
+    },
+  );
 
-  testWidgets('pinch zoom keeps the picture on screen and taps accurate',
-      (tester) async {
+  testWidgets('pinch zoom keeps the picture on screen and taps accurate', (
+    tester,
+  ) async {
     final level = LevelRepository.getLevel(120);
     const boardSize = Size(412, 600);
     String? tapped;
@@ -281,8 +298,12 @@ void main() {
     expect(shown.top, lessThanOrEqualTo(24.01));
 
     // Tapping a visible cell while zoomed hits that cell's arrow.
-    final visible = Rect.fromLTWH(0, 0, boardSize.width, boardSize.height)
-        .deflate(30);
+    final visible = Rect.fromLTWH(
+      0,
+      0,
+      boardSize.width,
+      boardSize.height,
+    ).deflate(30);
     final target = level.arrows.firstWhere(
       (a) => visible.contains(_cellCentre(tc.value, cell, a.points.last)),
     );
@@ -306,8 +327,10 @@ void main() {
     await tester.pumpAndSettle();
     final out = tc.value.getMaxScaleOnAxis();
     expect(out, lessThan(fitScale * 0.9));
-    expect(out,
-        greaterThanOrEqualTo(fitScale * ArrowBoardWidget.minZoomFraction - 1e-6));
+    expect(
+      out,
+      greaterThanOrEqualTo(fitScale * ArrowBoardWidget.minZoomFraction - 1e-6),
+    );
     final small = _screenRect(tc.value, picture);
     expect(small.center.dx, closeTo(boardSize.width / 2, 0.5));
     expect(small.center.dy, closeTo(boardSize.height / 2, 0.5));
@@ -317,13 +340,15 @@ void main() {
     Future<GameplayController> finishLevel(WidgetTester tester) async {
       _registerServices();
       await _setScreen(tester, _phones.values.first, 1.0);
-      await tester.pumpWidget(GetMaterialApp(
-        initialRoute: '/',
-        getPages: [
-          GetPage(name: '/', page: () => const Text('Level map')),
-          GetPage(name: '/g', page: () => const GameplayScreen()),
-        ],
-      ));
+      await tester.pumpWidget(
+        GetMaterialApp(
+          initialRoute: '/',
+          getPages: [
+            GetPage(name: '/', page: () => const Text('Level map')),
+            GetPage(name: '/g', page: () => const GameplayScreen()),
+          ],
+        ),
+      );
       Get.toNamed('/g', arguments: 2);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -335,8 +360,9 @@ void main() {
       return controller;
     }
 
-    testWidgets('back closes the level instead of leaving an empty board',
-        (tester) async {
+    testWidgets('back closes the level instead of leaving an empty board', (
+      tester,
+    ) async {
       await finishLevel(tester);
       await tester.binding.handlePopRoute(); // Android back
       await tester.pump();
@@ -376,13 +402,15 @@ void main() {
         testWidgets('Gameplay + pause menu – $label', (tester) async {
           _registerServices();
           await _setScreen(tester, entry.value, scale);
-          await tester.pumpWidget(GetMaterialApp(
-            initialRoute: '/',
-            getPages: [
-              GetPage(name: '/', page: () => const SizedBox()),
-              GetPage(name: '/g', page: () => const GameplayScreen()),
-            ],
-          ));
+          await tester.pumpWidget(
+            GetMaterialApp(
+              initialRoute: '/',
+              getPages: [
+                GetPage(name: '/', page: () => const SizedBox()),
+                GetPage(name: '/g', page: () => const GameplayScreen()),
+              ],
+            ),
+          );
           Get.toNamed('/g', arguments: 2);
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 500));
@@ -422,29 +450,29 @@ void main() {
 
         final dialogs = <String, Widget Function()>{
           'Level complete': () => LevelCompleteDialog(
-                stars: 2,
-                levelNumber: 57,
-                moves: 31,
-                onNextLevel: () {},
-                onReplay: () {},
-                onHome: () {},
-              ),
+            stars: 2,
+            levelNumber: 57,
+            moves: 31,
+            onNextLevel: () {},
+            onReplay: () {},
+            onHome: () {},
+          ),
           'Daily complete': () => LevelCompleteDialog(
-                stars: 3,
-                levelNumber: 0,
-                moves: 12,
-                coinsEarned: 0,
-                isDailyChallenge: true,
-                onNextLevel: () {},
-                onReplay: () {},
-                onHome: () {},
-              ),
+            stars: 3,
+            levelNumber: 0,
+            moves: 12,
+            coinsEarned: 0,
+            isDailyChallenge: true,
+            onNextLevel: () {},
+            onReplay: () {},
+            onHome: () {},
+          ),
           'Game over': () => GameOverDialog(
-                levelNumber: 57,
-                onRetry: () {},
-                onHome: () {},
-                onWatchAd: () async => false,
-              ),
+            levelNumber: 57,
+            onRetry: () {},
+            onHome: () {},
+            onWatchAd: () async => false,
+          ),
           'Tutorial': () => TutorialOverlay(onDismiss: () {}),
         };
         for (final d in dialogs.entries) {
