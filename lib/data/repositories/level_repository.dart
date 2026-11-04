@@ -4,6 +4,7 @@ import 'dart:isolate';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/difficulty.dart';
 import '../../data/models/level_model.dart';
+import '../../game/generator/daily_challenge_generator.dart';
 import '../../game/generator/level_generator.dart';
 
 /// Provides access to every campaign level via deterministic generation.
@@ -102,24 +103,35 @@ class LevelRepository {
   /// Reads the cache without generating or preloading (useful for testing).
   static LevelModel? cachedLevel(int n) => _cache[n];
 
-  /// Daily challenges use a mid-campaign board size and difficulty.
-  static const Difficulty dailyDifficulty = Difficulty.normal;
+  /// Daily challenges are huge expert boards (see DailyChallengeGenerator).
+  static const Difficulty dailyDifficulty = Difficulty.extreme;
 
-  /// Generate a daily challenge level from a date seed
+  /// Generate a daily challenge level from a date seed (synchronous; the app
+  /// uses [prepareDailyChallenge]).
   static LevelModel getDailyChallenge(int dateSeed) {
     return _cache.putIfAbsent(
       -dateSeed,
-      () =>
-          LevelGenerator.generate(
-            levelNumber: 0,
-            seed: dateSeed,
-            difficulty: dailyDifficulty,
-          ) ??
-          LevelGenerator.guaranteedLevel(
-            levelNumber: 0,
-            seed: dateSeed,
-            spec: LevelGenerator.specFor(0, dailyDifficulty),
-          ),
+      () => DailyChallengeGenerator.generate(dateSeed),
     );
+  }
+
+  static final Map<int, Future<LevelModel>> _dailyInFlight = {};
+
+  /// The daily board for [dateSeed], generated on a background isolate and
+  /// kept in this isolate's cache, so returning to the daily screen the same
+  /// day shows it at once. Concurrent calls share one generation.
+  static Future<LevelModel> prepareDailyChallenge(int dateSeed) async {
+    final cached = _cache[-dateSeed];
+    if (cached != null) return cached;
+    final future = _dailyInFlight.putIfAbsent(
+      dateSeed,
+      () => Isolate.run(() => DailyChallengeGenerator.generate(dateSeed)),
+    );
+    try {
+      final level = await future;
+      return _cache.putIfAbsent(-dateSeed, () => level);
+    } finally {
+      _dailyInFlight.remove(dateSeed);
+    }
   }
 }

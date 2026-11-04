@@ -104,7 +104,8 @@ void main() {
       expect(gc.currentLevelNumber, 2);
       expect(gc.gridSize, LevelGenerator.gridForLevel(2));
       expect(gc.isComplete.value, isFalse);
-    });
+      // Plays every escape animation of level 1's 70 arrows in real time.
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('restart reproduces exactly the same board', () async {
       final gc = Get.put(GameplayController());

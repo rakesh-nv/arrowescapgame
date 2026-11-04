@@ -372,6 +372,50 @@ class DifficultyCurve {
     );
   }
 
+  // ── Daily challenge ─────────────────────────────────────────────────────
+
+  /// Campaign level whose board the daily challenge is built like: a
+  /// late-campaign, expert-sized board (see [forDaily]).
+  static const int dailyReferenceLevel = 600;
+
+  /// Board parameters of every daily challenge: the size, arrow count, arrow
+  /// length and planning depth of campaign level [dailyReferenceLevel], with
+  /// more arrows blocked at the start, labelled extreme. The same on every
+  /// date, so no day is an easy one.
+  static PuzzleSpec forDaily() {
+    final s = forLevel(dailyReferenceLevel);
+    return PuzzleSpec(
+      gridSize: s.gridSize,
+      fill: s.fill,
+      avgArrowLen: s.avgArrowLen,
+      maxTierLen: s.maxTierLen,
+      maxAbsorbLen: s.maxAbsorbLen,
+      minAvgBends: s.minAvgBends,
+      minDepth: s.minDepth,
+      minOccupancy: s.minOccupancy,
+      difficulty: Difficulty.extreme,
+      targetRounds: s.targetRounds,
+      targetBlockedShare: max(s.targetBlockedShare, 0.8),
+      arrowFloor: s.arrowFloor,
+      targetCells: s.targetCells,
+      maxGridSize: s.maxGridSize,
+    );
+  }
+
+  /// Deterministic silhouette for a daily board built from [seed], chosen
+  /// among the pictures that can fill a [forDaily]-sized board.
+  static Silhouette dailySilhouette(int seed) {
+    final t = _tableSpec(dailyReferenceLevel);
+    var pool = silhouettePoolFor(
+      t.gridSize,
+      targetCells: t.targetCells,
+      maxGrid: t.maxGridSize,
+      level: dailyReferenceLevel,
+    );
+    if (pool.isEmpty) pool = silhouettePoolFor(t.gridSize);
+    return pool[_mix(seed) % pool.length];
+  }
+
   // ── Silhouettes ─────────────────────────────────────────────────────────
 
   /// Silhouettes that suit a level with nominal board [gridSize] and, when

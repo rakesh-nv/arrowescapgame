@@ -1,5 +1,3 @@
-import 'dart:isolate';
-
 import 'package:get/get.dart';
 import '../../data/models/daily_challenge.dart';
 import '../../data/repositories/level_repository.dart';
@@ -39,9 +37,7 @@ class DailyChallengeController extends GetxController {
     final seed = DailyChallenge.seedFromDate(todayKey);
 
     try {
-      _challengeLevel = await Isolate.run(
-        () => LevelRepository.getDailyChallenge(seed),
-      );
+      _challengeLevel = await LevelRepository.prepareDailyChallenge(seed);
     } catch (_) {
       challengeLoadError.value = 'Could not prepare today\'s challenge.';
     } finally {

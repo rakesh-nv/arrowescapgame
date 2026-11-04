@@ -124,11 +124,8 @@ class GameEngine {
   }
 
   /// Returns all arrows currently able to escape
-  List<ArrowModel> getAvailableArrows() {
-    return activeArrows
-        .where((a) => LevelSolver.canEscape(a, activeArrows, _gridSize))
-        .toList();
-  }
+  List<ArrowModel> getAvailableArrows() =>
+      LevelSolver.escapableAmong(activeArrows, _gridSize);
 
   /// Returns the remaining (non-removed) arrows count
   int get remainingCount =>

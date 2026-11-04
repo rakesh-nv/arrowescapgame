@@ -166,10 +166,26 @@ class LevelSolver {
     return _getAvailableArrows(state);
   }
 
-  static List<ArrowModel> _getAvailableArrows(BoardState state) {
-    return state.allArrows
-        .where((a) => _canEscape(a, state))
-        .toList();
+  static List<ArrowModel> _getAvailableArrows(BoardState state) =>
+      escapableAmong(state.allArrows, state.gridSize);
+
+  /// The arrows of [remaining] that can escape now, in their given order.
+  /// Same rule as [canEscape], but the board's cell map is built once for all
+  /// arrows instead of once per arrow, which matters on 300-arrow boards.
+  static List<ArrowModel> escapableAmong(
+    List<ArrowModel> remaining,
+    int gridSize,
+  ) {
+    final state = BoardState(
+      arrows: {for (final a in remaining) a.id: a},
+      gridSize: gridSize,
+    );
+    final occupancy = state.occupancy;
+    if (occupancy == null) return const [];
+    return [
+      for (final a in remaining)
+        if (_canEscapeWith(a, occupancy, gridSize)) a,
+    ];
   }
 
   /// Checks if [arrow] can escape from the current [state].
@@ -185,7 +201,16 @@ class LevelSolver {
   }
 
   static bool _canEscape(ArrowModel arrow, BoardState state) {
-    final gridSize = state.gridSize;
+    final occupancy = state.occupancy;
+    if (occupancy == null) return false;
+    return _canEscapeWith(arrow, occupancy, state.gridSize);
+  }
+
+  static bool _canEscapeWith(
+    ArrowModel arrow,
+    Map<(int, int), String> occupancy,
+    int gridSize,
+  ) {
     final dir = arrow.exitDirection;
     final dRow = dir.dRow;
     final dCol = dir.dCol;
@@ -197,9 +222,6 @@ class LevelSolver {
         return false;
       }
     }
-
-    final occupancy = state.occupancy;
-    if (occupancy == null) return false;
 
     // Material first moves through the arrow's own connected path. After the
     // head reaches its endpoint, the whole snake follows it through this

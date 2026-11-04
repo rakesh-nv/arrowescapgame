@@ -105,15 +105,17 @@ class LevelGenerator {
   /// returns null: if every bounded attempt fails, it returns
   /// [guaranteedLevel] filling the same silhouette.
   ///
-  /// [silhouette] and [gridSize] override the curve (tests and tools).
+  /// [silhouette] and [gridSize] override the curve (tests and tools), and
+  /// [baseSpec] replaces the curve's parameters (daily challenge).
   static LevelModel? generate({
     required int levelNumber,
     required int seed,
     Difficulty? difficulty,
     Silhouette? silhouette,
     int? gridSize,
+    PuzzleSpec? baseSpec,
   }) {
-    final base = specFor(levelNumber, difficulty);
+    final base = baseSpec ?? specFor(levelNumber, difficulty);
     final shape =
         silhouette ?? _silhouetteFor(levelNumber, seed, difficulty, base);
     // Board size follows the picture: enough cells for the level's target

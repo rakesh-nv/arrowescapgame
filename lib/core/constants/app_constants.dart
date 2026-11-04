@@ -37,6 +37,10 @@ class AppConstants {
   /// removed-arrow ids refer to a different board.
   static const int levelGeneratorVersion = 9;
 
+  /// Bumped whenever the daily challenge generator changes the board a date
+  /// produces. Saved daily runs from another version are discarded.
+  static const int dailyGeneratorVersion = 2;
+
   // Solver
   static const int solverMaxIterations = 100000;
 

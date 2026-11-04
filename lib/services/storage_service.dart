@@ -161,8 +161,24 @@ class StorageService {
   static const String _dailyKeyPrefix = 'daily_';
 
   /// Retrieves the saved in-progress daily challenge for [dateKey] ('YYYY-MM-DD').
-  Map<String, dynamic>? getDailySavedGame(String dateKey) =>
-      _readSave('$_dailyKeyPrefix$dateKey');
+  /// A run saved by another daily generator version refers to a different
+  /// board, so it is discarded.
+  Map<String, dynamic>? getDailySavedGame(String dateKey) {
+    final key = '$_dailyKeyPrefix$dateKey';
+    final data = _readSave(key);
+    if (data == null) return null;
+    if (data[_dailyVersionKey] != AppConstants.dailyGeneratorVersion) {
+      if (_savedGameBox != null && _savedGameBox!.isOpen) {
+        _savedGameBox!.delete(key);
+      } else {
+        _inMemorySavedGames.remove(key);
+      }
+      return null;
+    }
+    return data;
+  }
+
+  static const String _dailyVersionKey = 'dailyGenVersion';
 
   /// Saves the in-progress daily challenge for [dateKey], replacing any saved
   /// daily from another date (that board can never be played again).
@@ -183,6 +199,7 @@ class StorageService {
       'isDaily': true,
       'savedAt': DateTime.now().millisecondsSinceEpoch,
       _genVersionKey: AppConstants.levelGeneratorVersion,
+      _dailyVersionKey: AppConstants.dailyGeneratorVersion,
     };
 
     if (_savedGameBox != null && _savedGameBox!.isOpen) {

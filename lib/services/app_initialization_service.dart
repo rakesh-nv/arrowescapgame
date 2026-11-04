@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -7,6 +8,7 @@ import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../core/constants/app_constants.dart';
+import '../data/models/daily_challenge.dart';
 import '../data/models/game_settings.dart';
 import '../data/models/player_progress.dart';
 import '../data/repositories/level_repository.dart';
@@ -126,6 +128,14 @@ class AppInitializationService {
       );
       await initializeLevelSystem();
       await prepareInitialLevel(progressRepo);
+      // Today's daily board is large; start building it now on a background
+      // isolate so the Daily Challenge screen rarely has to wait. If this
+      // fails, that screen generates it again (and shows a retry on error).
+      unawaited(
+        LevelRepository.prepareDailyChallenge(
+          DailyChallenge.seedFromDate(DailyChallenge.todayKey()),
+        ).then<void>((_) {}, onError: (Object _) {}),
+      );
 
       _isInitialized = true;
       onProgress(
