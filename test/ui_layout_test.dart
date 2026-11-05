@@ -289,14 +289,6 @@ void main() {
     final zoomed = tc.value.getMaxScaleOnAxis();
     expect(zoomed, greaterThan(fitScale * 1.5));
 
-    // Drag far towards the bottom-right: the picture stays on screen, with at
-    // most a small margin past its top-left corner.
-    await tester.dragFrom(centre, const Offset(2000, 2000));
-    await tester.pumpAndSettle();
-    final shown = _screenRect(tc.value, picture);
-    expect(shown.left, lessThanOrEqualTo(24.01));
-    expect(shown.top, lessThanOrEqualTo(24.01));
-
     // Tapping a visible cell while zoomed hits that cell's arrow.
     final visible = Rect.fromLTWH(
       0,
@@ -312,6 +304,18 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(tapped, target.id);
+
+    // The board pans without limits: a long drag moves the picture far off
+    // screen, keeps the zoom, and the Fit chip brings it back.
+    await tester.dragFrom(centre, const Offset(2000, 2000));
+    await tester.pumpAndSettle();
+    final shown = _screenRect(tc.value, picture);
+    expect(shown.left, greaterThan(boardSize.width));
+    expect(shown.top, greaterThan(boardSize.height));
+    expect(tc.value.getMaxScaleOnAxis(), closeTo(zoomed, 1e-6));
+    await tester.tap(find.byIcon(Icons.fit_screen_rounded));
+    await tester.pumpAndSettle();
+    expect(tc.value.getMaxScaleOnAxis(), closeTo(fitScale, 1e-6));
 
     // A strong pinch-in shrinks the picture below the fitted size, down to
     // the zoom-out limit, and the smaller picture stays centred.
@@ -332,8 +336,74 @@ void main() {
       greaterThanOrEqualTo(fitScale * ArrowBoardWidget.minZoomFraction - 1e-6),
     );
     final small = _screenRect(tc.value, picture);
-    expect(small.center.dx, closeTo(boardSize.width / 2, 0.5));
-    expect(small.center.dy, closeTo(boardSize.height / 2, 0.5));
+    // Zoom keeps the board where it was: pinching around the centre of a
+    // centred picture leaves it centred (gesture slop aside), not jumping.
+    expect(small.center.dx, closeTo(boardSize.width / 2, 6));
+    expect(small.center.dy, closeTo(boardSize.height / 2, 6));
+  });
+
+  testWidgets('one finger pans the board freely in all four directions', (
+    tester,
+  ) async {
+    final level = LevelRepository.getLevel(120);
+    const boardSize = Size(412, 600);
+    final taps = <String>[];
+    await tester.pumpWidget(_board(level, boardSize, taps.add));
+    await tester.pump(const Duration(milliseconds: 400));
+    final tc = _controller(tester);
+    final scale = tc.value.getMaxScaleOnAxis();
+    final centre = boardSize.center(Offset.zero);
+
+    // Each one-finger drag moves the board by about the drag distance (the
+    // gesture slop aside), with no edge limit, and never taps an arrow.
+    for (final delta in const [
+      Offset(0, -1500), // up
+      Offset(0, 3000), // down
+      Offset(-2500, 0), // left
+      Offset(4000, 0), // right
+    ]) {
+      final before = tc.value.getTranslation();
+      await tester.dragFrom(centre, delta);
+      await tester.pumpAndSettle();
+      final moved = tc.value.getTranslation() - before;
+      expect(moved.x, closeTo(delta.dx, 60));
+      expect(moved.y, closeTo(delta.dy, 60));
+      expect(tc.value.getMaxScaleOnAxis(), closeTo(scale, 1e-6));
+    }
+    expect(taps, isEmpty);
+
+    // A short drag that starts on an arrow pans; it does not move the arrow.
+    await tester.tap(find.byIcon(Icons.fit_screen_rounded));
+    await tester.pumpAndSettle();
+    final cell = _sceneCell(boardSize, level.gridSize);
+    final arrow = level.arrows[level.arrows.length ~/ 2];
+    final start = _cellCentre(tc.value, cell, arrow.points.last);
+    await tester.dragFrom(start, const Offset(60, 40));
+    await tester.pumpAndSettle();
+    expect(taps, isEmpty);
+
+    // A touch that stops a fling is not a tap; once the board rests, a tap
+    // on the same arrow works.
+    await tester.tap(find.byIcon(Icons.fit_screen_rounded));
+    await tester.pumpAndSettle();
+    await tester.fling(
+      find.byType(InteractiveViewer),
+      const Offset(0, -300),
+      3000,
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.tapAt(_cellCentre(tc.value, cell, arrow.points.last));
+    await tester.pump();
+    expect(taps, isEmpty);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.fit_screen_rounded));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
+    for (var attempt = 0; attempt < 4 && taps.isEmpty; attempt++) {
+      await tester.tapAt(_cellCentre(tc.value, cell, arrow.points.last));
+      await tester.pumpAndSettle();
+    }
+    expect(taps, [arrow.id]);
   });
 
   group('Level complete dialog', () {

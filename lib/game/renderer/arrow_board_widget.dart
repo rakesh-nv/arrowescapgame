@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:math' show cos, max, min, pi, sin;
 import 'dart:ui' show PointMode;
 
@@ -12,10 +13,13 @@ import 'arrow_widget.dart';
 /// The main puzzle board widget.
 ///
 /// - The whole board is fitted to the available space (any grid size).
-/// - Pinch-to-zoom and drag-to-pan via [InteractiveViewer], bounded so the
-///   board cannot be lost off-screen; a recenter chip appears once moved.
+/// - Pinch-to-zoom and one-finger drag-to-pan via [InteractiveViewer]. The
+///   pan is unbounded in every direction and the dot lattice continues past
+///   the grid, so the board feels endless; a Fit chip appears once moved.
 /// - Cell-accurate tap detection: taps are converted to scene coordinates
-///   with the viewer's transform before the grid hit-test.
+///   with the viewer's transform before the grid hit-test. A drag never
+///   counts as a tap, and a touch that lands while the board is still
+///   moving (fling) only stops being a tap, so panning never moves an arrow.
 class ArrowBoardWidget extends StatefulWidget {
   final List<ArrowModel> arrows;
   final int gridSize;
@@ -76,6 +80,21 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   bool _suppressListener = false;
   bool _offFit = false;
 
+  /// Board motion, used to tell a tap from a touch that interrupts a pan.
+  bool _interacting = false;
+
+  /// Runs while the board is moving and for [_settleTime] after its last
+  /// movement (inertia after a fling included).
+  Timer? _settling;
+  bool _moving = false;
+
+  /// Set on pointer down when the board was still moving: the tap that
+  /// follows is swallowed instead of moving the arrow under the finger.
+  bool _swallowTap = false;
+
+  /// A touch this soon after the board last moved is part of the pan.
+  static const Duration _settleTime = Duration(milliseconds: 90);
+
   /// On-screen cell size below which an ambiguous tap magnifies the board
   /// instead of guessing which neighbouring arrow was meant.
   static const double _comfortCell = 22;
@@ -111,6 +130,7 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   @override
   void dispose() {
     _tc.removeListener(_onTransformChanged);
+    _settling?.cancel();
     _recenter.dispose();
     _tc.dispose();
     super.dispose();
@@ -129,7 +149,15 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
 
   void _onTransformChanged() {
     if (_suppressListener || _fitMatrix == null) return;
-    _applyClamp();
+    // Two changes within the settle time mean the board is in motion (a
+    // drag or a fling coasting); a single jump (Fit, a programmatic move)
+    // is not.
+    _moving = _settling != null;
+    _settling?.cancel();
+    _settling = Timer(_settleTime, () {
+      _settling = null;
+      _moving = false;
+    });
     final off = !_isNearFit(_tc.value);
     if (off != _offFit) setState(() => _offFit = off);
   }
@@ -158,35 +186,6 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
       (maxC + 1.5) * cellSize,
       (maxR + 1.5) * cellSize,
     );
-  }
-
-  /// Keeps the picture on screen at every zoom level: centred on an axis
-  /// where it is smaller than the viewport, otherwise pannable edge to edge
-  /// plus a small margin. Done here (not via boundaryMargin, which is fixed
-  /// in scene units) so the limits follow the current scale.
-  void _applyClamp() {
-    final size = _fitForSize;
-    if (size == null || _focus.isEmpty) return;
-    final m = _tc.value;
-    final scale = m.getMaxScaleOnAxis();
-    final t = m.getTranslation();
-
-    double clampAxis(double offset, double start, double extent, double view) {
-      final content = extent * scale;
-      // Screen position of the focus rect's leading edge for this offset.
-      final lead = offset + start * scale;
-      final wanted = content <= view
-          ? (view - content) / 2
-          : lead.clamp(view - content - 24.0, 24.0);
-      return offset + (wanted - lead);
-    }
-
-    final tx = clampAxis(t.x, _focus.left, _focus.width, size.width);
-    final ty = clampAxis(t.y, _focus.top, _focus.height, size.height);
-    if ((tx - t.x).abs() < 0.01 && (ty - t.y).abs() < 0.01) return;
-    _suppressListener = true;
-    _tc.value = m.clone()..setTranslationRaw(tx, ty, t.z);
-    _suppressListener = false;
   }
 
   bool _isNearFit(Matrix4 m) {
@@ -225,10 +224,9 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
       _tc.value = _fitMatrix!.clone();
       _suppressListener = false;
       _offFit = false;
-    } else {
-      // The viewport changed under a zoomed view: keep the board reachable.
-      _applyClamp();
     }
+    // Otherwise the player's own view is kept as it is: the board pans
+    // freely and the Fit chip brings it back.
   }
 
   static Matrix4 _scaleTranslate(double s, double tx, double ty) => Matrix4(
@@ -277,7 +275,15 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   /// touch is split between arrows while cells are small on screen, the
   /// board magnifies around the finger instead of guessing, so a mis-tap
   /// never costs a life.
+  void _onPointerDown(PointerDownEvent _) {
+    _swallowTap = _interacting || _recenter.isAnimating || _moving;
+  }
+
   void _handleTap(TapUpDetails details, double cellSize, double maxScale) {
+    if (_swallowTap) {
+      _swallowTap = false;
+      return;
+    }
     final p = details.localPosition;
     final scale = _tc.value.getMaxScaleOnAxis();
     final owners = _tapOwners();
@@ -355,103 +361,134 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
 
         return Stack(
           children: [
+            // Dimmed dot lattice beyond the grid, following the pan and zoom,
+            // so the board reads as endless rather than as a floating card.
             Positioned.fill(
-              // GestureDetector OUTSIDE InteractiveViewer so taps are not
-              // swallowed by the pan/zoom recogniser.
-              child: GestureDetector(
-                onTapUp: (details) => _handleTap(details, cellSize, maxScale),
-                child: InteractiveViewer(
-                  transformationController: _tc,
-                  // Pan limits are applied in _applyClamp, scale-aware.
-                  boundaryMargin: const EdgeInsets.all(double.infinity),
-                  minScale: _fitScale * ArrowBoardWidget.minZoomFraction,
-                  maxScale: maxScale,
-                  constrained: false,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, t, child) => Opacity(
-                      opacity: t,
-                      child: Transform.scale(
-                        scale: 0.96 + 0.04 * t,
-                        child: child,
+              child: IgnorePointer(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) =>
+                      Opacity(opacity: t, child: child),
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _OuterDotFieldPainter(
+                        transform: _tc,
+                        gridSize: widget.gridSize,
+                        cellSize: cellSize,
+                        dotColor: widget.theme.gridDotColor,
                       ),
                     ),
-                    child: AnimatedScale(
-                      scale: widget.isCompleting ? 1.012 : 1.0,
-                      duration: const Duration(milliseconds: 280),
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              // GestureDetector OUTSIDE InteractiveViewer so taps are not
+              // swallowed by the pan/zoom recogniser; a drag past the touch
+              // slop is won by the viewer and never reaches onTapUp.
+              child: Listener(
+                onPointerDown: _onPointerDown,
+                child: GestureDetector(
+                  onTapUp: (details) => _handleTap(details, cellSize, maxScale),
+                  child: InteractiveViewer(
+                    transformationController: _tc,
+                    // One finger pans, two fingers pinch; no pan limits in any
+                    // direction (the Fit chip recentres).
+                    boundaryMargin: const EdgeInsets.all(double.infinity),
+                    onInteractionStart: (_) => _interacting = true,
+                    onInteractionEnd: (_) => _interacting = false,
+                    minScale: _fitScale * ArrowBoardWidget.minZoomFraction,
+                    maxScale: maxScale,
+                    constrained: false,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 350),
                       curve: Curves.easeOutCubic,
-                      // Own layer: pinch/pan only re-composites the board
-                      // instead of repainting every arrow each frame.
-                      child: RepaintBoundary(
-                        child: SizedBox(
-                          width: gridPx,
-                          height: gridPx,
-                          child: Stack(
-                            children: [
-                              // Theme board panel (only themes that set one)
-                              if (widget.theme.boardColor != null)
+                      builder: (context, t, child) => Opacity(
+                        opacity: t,
+                        child: Transform.scale(
+                          scale: 0.96 + 0.04 * t,
+                          child: child,
+                        ),
+                      ),
+                      child: AnimatedScale(
+                        scale: widget.isCompleting ? 1.012 : 1.0,
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        // Own layer: pinch/pan only re-composites the board
+                        // instead of repainting every arrow each frame.
+                        child: RepaintBoundary(
+                          child: SizedBox(
+                            width: gridPx,
+                            height: gridPx,
+                            child: Stack(
+                              children: [
+                                // Theme board panel (only themes that set one)
+                                if (widget.theme.boardColor != null)
+                                  Positioned.fill(
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: widget.theme.boardColor,
+                                        borderRadius: BorderRadius.circular(
+                                          cellSize * 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                // Rangoli / Kolam dot grid
                                 Positioned.fill(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: widget.theme.boardColor,
-                                      borderRadius: BorderRadius.circular(
-                                        cellSize * 0.5,
+                                  child: RepaintBoundary(
+                                    child: CustomPaint(
+                                      // Static per level: let the engine cache
+                                      // it while the player pans.
+                                      isComplex: true,
+                                      painter: _DotGridPainter(
+                                        gridSize: widget.gridSize,
+                                        cellSize: cellSize,
+                                        dotColor: widget.theme.gridDotColor,
+                                        shapeCells: widget.shapeCells,
                                       ),
                                     ),
                                   ),
                                 ),
-                              // Rangoli / Kolam dot grid
-                              Positioned.fill(
-                                child: RepaintBoundary(
-                                  child: CustomPaint(
-                                    // Static per level: let the engine cache
-                                    // it while the player pans.
-                                    isComplex: true,
-                                    painter: _DotGridPainter(
-                                      gridSize: widget.gridSize,
-                                      cellSize: cellSize,
-                                      dotColor: widget.theme.gridDotColor,
-                                      shapeCells: widget.shapeCells,
+                                // Every idle arrow in one layer: a board of
+                                // ~90 arrows is one picture, not 90 layers
+                                // with 270 animation controllers.
+                                Positioned.fill(
+                                  child: RepaintBoundary(
+                                    child: CustomPaint(
+                                      // Up to ~200 long arrows on the largest
+                                      // boards; changes only once per move.
+                                      isComplex: true,
+                                      painter: _IdleArrowsPainter(
+                                        arrows: idle,
+                                        cellSize: cellSize,
+                                        theme: widget.theme,
+                                        pathFor: (a) => _pathFor(a, cellSize),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              // Every idle arrow in one layer: a board of
-                              // ~90 arrows is one picture, not 90 layers
-                              // with 270 animation controllers.
-                              Positioned.fill(
-                                child: RepaintBoundary(
-                                  child: CustomPaint(
-                                    // Up to ~200 long arrows on the largest
-                                    // boards; changes only once per move.
-                                    isComplex: true,
-                                    painter: _IdleArrowsPainter(
-                                      arrows: idle,
-                                      cellSize: cellSize,
-                                      theme: widget.theme,
-                                      pathFor: (a) => _pathFor(a, cellSize),
-                                    ),
+                                // Arrows that animate (escaping, blocked,
+                                // hinted, or the blocker just shown) get their
+                                // own widget and layer.
+                                ...active.map(
+                                  (arrow) => ArrowWidget(
+                                    key: ValueKey(arrow.id),
+                                    arrow: arrow,
+                                    cellSize: cellSize,
+                                    gridSize: widget.gridSize,
+                                    theme: widget.theme,
+                                    isHinted: arrow.id == widget.hintedArrowId,
+                                    isBlocker:
+                                        arrow.id == widget.blockerArrowId,
+                                    origin: Offset.zero,
                                   ),
                                 ),
-                              ),
-                              // Arrows that animate (escaping, blocked,
-                              // hinted, or the blocker just shown) get their
-                              // own widget and layer.
-                              ...active.map(
-                                (arrow) => ArrowWidget(
-                                  key: ValueKey(arrow.id),
-                                  arrow: arrow,
-                                  cellSize: cellSize,
-                                  gridSize: widget.gridSize,
-                                  theme: widget.theme,
-                                  isHinted: arrow.id == widget.hintedArrowId,
-                                  isBlocker: arrow.id == widget.blockerArrowId,
-                                  origin: Offset.zero,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -571,6 +608,81 @@ class _IdleArrowsPainter extends CustomPainter {
   }
 }
 
+/// Scene radius of a grid dot. Dots stay narrower than the thin arrow
+/// stroke, so a dot under an arrow is fully covered and never peeks out as a
+/// grey halo. Shared by the grid and the outer lattice so they match.
+double _dotRadiusFor(double cellSize) => min(
+  (cellSize * 0.06).clamp(2.0, 4.0),
+  PuzzleConfig.strokeWidthFor(cellSize) * 0.4,
+);
+
+/// Continues the dimmed dot lattice outside the grid across the whole
+/// viewport, aligned to the same cell centres, at the current pan and zoom.
+/// Only the visible dots are drawn (one batched call), and none when cells
+/// are too small on screen to read, so it stays cheap while panning.
+class _OuterDotFieldPainter extends CustomPainter {
+  final TransformationController transform;
+  final int gridSize;
+  final double cellSize;
+  final Color dotColor;
+
+  /// Below this on-screen spacing the dots would be sub-pixel noise.
+  static const double _minScreenSpacing = 6;
+
+  _OuterDotFieldPainter({
+    required this.transform,
+    required this.gridSize,
+    required this.cellSize,
+    required this.dotColor,
+  }) : super(repaint: transform);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final m = transform.value;
+    final scale = m.getMaxScaleOnAxis();
+    final step = cellSize * scale;
+    if (!step.isFinite || step < _minScreenSpacing) return;
+    final t = m.getTranslation();
+
+    // Visible cell range, in grid coordinates.
+    final c0 = (-t.x / step - 0.5).floor();
+    final c1 = ((size.width - t.x) / step - 0.5).ceil();
+    final r0 = (-t.y / step - 0.5).floor();
+    final r1 = ((size.height - t.y) / step - 0.5).ceil();
+
+    final points = <Offset>[];
+    for (var r = r0; r <= r1; r++) {
+      final y = t.y + (r + 0.5) * step;
+      final rowInGrid = r >= 0 && r < gridSize;
+      for (var c = c0; c <= c1; c++) {
+        if (rowInGrid && c >= 0 && c < gridSize) {
+          // The grid painter draws these; skip past the grid.
+          c = gridSize - 1;
+          continue;
+        }
+        points.add(Offset(t.x + (c + 0.5) * step, y));
+      }
+    }
+    if (points.isEmpty) return;
+    canvas.drawPoints(
+      PointMode.points,
+      points,
+      Paint()
+        ..color = dotColor.withValues(alpha: dotColor.a * 0.4)
+        ..isAntiAlias = true
+        ..strokeWidth = _dotRadiusFor(cellSize) * 2 * scale
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_OuterDotFieldPainter old) =>
+      !identical(old.transform, transform) ||
+      old.gridSize != gridSize ||
+      old.cellSize != cellSize ||
+      old.dotColor != dotColor;
+}
+
 /// Paints the Rangoli / Kolam dot grid. When the level has a silhouette,
 /// dots inside the picture keep full strength and dots outside it are dimmed,
 /// so the shape stays readable without painting anything behind the arrows.
@@ -590,13 +702,7 @@ class _DotGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final hasShape = shapeCells.isNotEmpty;
-
-    // Dots stay narrower than the thin arrow stroke, so a dot under an arrow
-    // is fully covered and never peeks out as a grey halo.
-    final dotRadius = min(
-      (cellSize * 0.06).clamp(2.0, 4.0),
-      PuzzleConfig.strokeWidthFor(cellSize) * 0.4,
-    );
+    final dotRadius = _dotRadiusFor(cellSize);
 
     // Round points drawn in two batched calls (inside / outside the
     // picture) instead of one circle per cell: 3,600 cells on a 60×60 board.
