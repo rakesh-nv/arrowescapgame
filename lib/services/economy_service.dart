@@ -24,11 +24,10 @@ class EconomyService extends GetxService {
   void _syncFromStorage() {
     final p = _storage.progress;
     coins.value = p.coins.clamp(0, 999999);
-    // Ensure player always has at least startingHints (3) free hints initially
-    if (p.hints < AppConstants.startingHints) {
-      p.hints = AppConstants.startingHints;
-      _storage.saveProgress(p);
-    }
+    // The saved count, exactly. A new player starts with
+    // AppConstants.startingHints (PlayerProgress's default); after that,
+    // hints only come back through a rewarded ad (or buyHint), never by
+    // reopening the app or a screen.
     hints.value = p.hints.clamp(0, 999);
   }
 
@@ -67,6 +66,15 @@ class EconomyService extends GetxService {
   void addHints(int amount) {
     if (amount <= 0) return;
     hints.value = (hints.value + amount).clamp(0, 999);
+    _persist();
+  }
+
+  /// Tops hints back up to [AppConstants.startingHints] for the next level
+  /// (never lowers a larger count) and saves at once. Called only when a
+  /// campaign level is completed.
+  void refillHintsForNextLevel() {
+    if (hints.value >= AppConstants.startingHints) return;
+    hints.value = AppConstants.startingHints;
     _persist();
   }
 

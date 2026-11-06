@@ -41,18 +41,25 @@ void main() {
   final results = <String, DailyResult>{};
 
   setUpAll(() {
+    // Silence generator diagnostics while building, then restore debugPrint:
+    // widget tests fail if a foundation debug variable is left changed.
+    final originalDebugPrint = debugPrint;
     debugPrint = (String? m, {int? wrapWidth}) {};
-    for (final date in _dates) {
-      final sw = Stopwatch()..start();
-      results[date] = DailyChallengeGenerator.generateWithReport(
-        DailyChallenge.seedFromDate(date),
-      );
-      // ignore: avoid_print
-      print(
-        'daily $date: ${results[date]!.level.shapeName}, '
-        '${results[date]!.difficulty}, attempts ${results[date]!.attempts}, '
-        '${sw.elapsedMilliseconds} ms',
-      );
+    try {
+      for (final date in _dates) {
+        final sw = Stopwatch()..start();
+        results[date] = DailyChallengeGenerator.generateWithReport(
+          DailyChallenge.seedFromDate(date),
+        );
+        // ignore: avoid_print
+        print(
+          'daily $date: ${results[date]!.level.shapeName}, '
+          '${results[date]!.difficulty}, attempts ${results[date]!.attempts}, '
+          '${sw.elapsedMilliseconds} ms',
+        );
+      }
+    } finally {
+      debugPrint = originalDebugPrint;
     }
   });
 
@@ -144,9 +151,10 @@ void main() {
         spec: DifficultyCurve.forDaily().withGridSize(100),
       );
       final m = PuzzleDifficulty.measure(rows)!;
+      // Short, straight arrows: far below the daily length floor.
       expect(
         DailyChallengeGenerator.minimum.failures(m),
-        contains(startsWith('blocked at start')),
+        contains(startsWith('average length')),
       );
     });
   });

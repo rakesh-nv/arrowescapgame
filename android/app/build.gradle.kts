@@ -77,4 +77,8 @@ dependencies {
 
     // Google Play In-App Updates (bridged in InAppUpdateHandler.kt)
     implementation("com.google.android.play:app-update:2.1.0")
+
+    // Play Games Services v2: the same SDK the games_services plugin uses,
+    // needed here so MainActivity can initialise it.
+    implementation("com.google.android.gms:play-services-games-v2:21.0.0")
 }

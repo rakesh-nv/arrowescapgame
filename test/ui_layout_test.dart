@@ -490,11 +490,18 @@ void main() {
             find.textContaining(LevelGenerator.silhouetteForLevel(2).name),
             findsOneWidget,
           );
-          expect(find.text('Restart'), findsOneWidget);
+          // Hint is the only in-level control: no Undo, Restart or moves.
+          expect(find.text('Hint'), findsOneWidget);
+          expect(find.text('Undo'), findsNothing);
+          expect(find.text('Restart'), findsNothing);
+          expect(find.text('moves'), findsNothing);
+          expect(find.byIcon(Icons.undo_rounded), findsNothing);
+          expect(find.byIcon(Icons.refresh_rounded), findsNothing);
 
           await tester.tap(find.byTooltip('Pause'));
           await tester.pump(const Duration(milliseconds: 500));
           expect(find.text('Resume'), findsOneWidget);
+          expect(find.text('Restart'), findsNothing);
           Get.reset();
         });
 

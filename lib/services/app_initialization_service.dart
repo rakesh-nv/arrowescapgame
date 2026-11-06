@@ -18,6 +18,7 @@ import 'analytics_service.dart';
 import 'audio_service.dart';
 import 'economy_service.dart';
 import 'haptic_service.dart';
+import 'play_games_service.dart';
 import 'purchase_service.dart';
 import 'storage_service.dart';
 import 'update/update_platform.dart';
@@ -117,6 +118,7 @@ class AppInitializationService {
       );
       await initializeAds();
       initializeUpdates(storageService);
+      initializePlayGames();
 
       // 5. Level System & Initial Level Preparation (Critical/Core)
       onProgress(
@@ -265,6 +267,21 @@ class AppInitializationService {
 
   /// Registers the in-app update service. Only wiring happens here; the
   /// network check runs later from Home, so startup never waits on Play.
+  /// Registers Google Play Games and starts looking for the player signed
+  /// in automatically at launch, in the background: startup never waits on
+  /// Play Games, and any failure leaves a guest profile.
+  static void initializePlayGames() {
+    if (Get.isRegistered<IPlayGamesService>()) return;
+    final IPlayGamesService service =
+        !kIsWeb &&
+            Platform.isAndroid &&
+            !Platform.environment.containsKey('FLUTTER_TEST')
+        ? GooglePlayGamesService()
+        : NoOpPlayGamesService();
+    Get.put<IPlayGamesService>(service, permanent: true);
+    unawaited(service.start());
+  }
+
   static void initializeUpdates(StorageService storageService) {
     if (Get.isRegistered<UpdateService>()) return;
     final UpdatePlatform platform;

@@ -12,7 +12,6 @@ import '../../services/economy_service.dart';
 import '../../widgets/app_icon_button.dart';
 import '../../widgets/coin_badge.dart';
 import '../../widgets/difficulty_badge.dart';
-import '../../widgets/game_dialog.dart';
 import '../../widgets/heart_display.dart';
 import '../../widgets/pressable_scale.dart';
 import '../../widgets/primary_button.dart';
@@ -20,7 +19,6 @@ import '../../widgets/secondary_button.dart';
 import '../settings/settings_controller.dart';
 import 'gameplay_controller.dart';
 import 'widgets/game_over_dialog.dart';
-import 'widgets/hint_ad_dialog.dart';
 import 'widgets/level_complete_dialog.dart';
 import 'widgets/tutorial_overlay.dart';
 import '../ads/ads_module.dart';
@@ -38,6 +36,9 @@ class _GameplayScreenState extends State<GameplayScreen>
   late ConfettiController _confetti;
   bool _dialogShown = false;
   bool _gameOverShown = false;
+
+  /// True while the rewarded ad for a free hint loads or plays.
+  bool _hintAdLoading = false;
   late AnimationController _rewardController;
   final List<Worker> _workers = [];
 
@@ -205,53 +206,27 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
-  void _showHintAdDialog() {
-    showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) =>
-          HintAdDialog(onWatchAd: () => _controller.watchAdForHint()),
-    ).then((useNow) {
-      if (useNow == true) {
-        _controller.onHint();
-      }
-    });
-  }
-
-  Future<void> _confirmRestart() async {
-    if (_controller.moves.value == 0 && _controller.mistakes.value == 0) {
-      _controller.onReset();
-      return;
+  /// Out of hints: plays the rewarded ad straight away (no dialog first) and,
+  /// if it was watched, uses the hint it earned at once.
+  Future<void> _watchAdForHint() async {
+    if (_hintAdLoading) return;
+    setState(() => _hintAdLoading = true);
+    final granted = await _controller.watchAdForHint();
+    if (!mounted) return;
+    setState(() => _hintAdLoading = false);
+    if (granted) {
+      _controller.onHint();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to load video ad. Check your connection and try again!',
+          ),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => GameDialog(
-        icon: const DialogIcon(
-          icon: Icons.refresh_rounded,
-          color: AppColors.accentBlue,
-        ),
-        title: const Text('Restart level?'),
-        message: const Text(
-          'The board resets to its start and your hearts refill.',
-        ),
-        children: [
-          PrimaryButton(
-            label: 'Restart',
-            icon: Icons.refresh_rounded,
-            width: double.infinity,
-            onTap: () => Navigator.of(ctx).pop(true),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          SecondaryButton(
-            label: AppStrings.cancel,
-            textColor: AppColors.textSecondary,
-            borderColor: AppColors.cardBorder,
-            onTap: () => Navigator.of(ctx).pop(false),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) _controller.onReset();
   }
 
   void _openPauseMenu() {
@@ -310,30 +285,14 @@ class _GameplayScreenState extends State<GameplayScreen>
                     onTap: () => close(resume: true),
                   ),
                   const SizedBox(height: AppSpacing.sm + 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SecondaryButton(
-                          label: 'Restart',
-                          icon: Icons.refresh_rounded,
-                          onTap: () {
-                            close();
-                            _confirmRestart();
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm + 2),
-                      Expanded(
-                        child: SecondaryButton(
-                          label: AppStrings.howToPlay,
-                          icon: Icons.help_outline_rounded,
-                          onTap: () {
-                            close();
-                            _controller.showTutorial();
-                          },
-                        ),
-                      ),
-                    ],
+                  SecondaryButton(
+                    label: AppStrings.howToPlay,
+                    icon: Icons.help_outline_rounded,
+                    width: double.infinity,
+                    onTap: () {
+                      close();
+                      _controller.showTutorial();
+                    },
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Obx(
@@ -671,6 +630,7 @@ class _GameplayScreenState extends State<GameplayScreen>
           hintedArrowId: _controller.hintedArrowId.value.isEmpty
               ? null
               : _controller.hintedArrowId.value,
+          hintRequest: _controller.hintRequest.value,
           blockerArrowId: _controller.blockerArrowId.value.isEmpty
               ? null
               : _controller.blockerArrowId.value,
@@ -686,92 +646,29 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   Widget _buildBottomBar(ThemeModel theme) {
     final economy = Get.find<EconomyService>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      // Equal slots: on narrow phones the controls shrink to fit rather than
-      // overflowing.
-      child: Row(
-        children: [
-          for (final item in <Widget>[
-            // Hint
-            Obx(() {
-              final hasHints = economy.hints.value > 0;
-              return _BottomActionButton(
-                icon: hasHints
-                    ? Icons.lightbulb_rounded
-                    : Icons.smart_display_rounded,
-                label: hasHints ? AppStrings.hint : 'Free Hint',
-                badge: hasHints ? '${economy.hints.value}' : 'Ad',
-                color: AppColors.coinGold,
-                theme: theme,
-                enabled: !_controller.isLoadingLevel.value,
-                onTap: () {
-                  if (hasHints) {
-                    _controller.onHint();
-                  } else {
-                    _showHintAdDialog();
-                  }
-                },
-              );
-            }),
-
-            // Restart
-            Obx(
-              () => _BottomActionButton(
-                icon: Icons.refresh_rounded,
-                label: 'Restart',
-                color: theme.isDark ? Colors.white : AppColors.navyMid,
-                theme: theme,
-                enabled:
-                    !_controller.isLoadingLevel.value &&
-                    (_controller.moves.value > 0 ||
-                        _controller.mistakes.value > 0),
-                onTap: _confirmRestart,
-              ),
-            ),
-
-            // Moves counter
-            Obx(
-              () => Semantics(
-                label: '${_controller.moves.value} moves',
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${_controller.moves.value}',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: theme.textColor,
-                      ),
-                    ),
-                    Text(
-                      'moves',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.textColor.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Undo
-            Obx(
-              () => _BottomActionButton(
-                icon: Icons.undo_rounded,
-                label: AppStrings.undo,
-                color: AppColors.accentBlue,
-                theme: theme,
-                enabled: _controller.clearedArrows > 0,
-                onTap: _controller.onUndo,
-              ),
-            ),
-          ])
-            Expanded(child: Center(child: item)),
-        ],
-      ),
+    // Hint is the only in-level control; Undo, Restart and the move counter
+    // were removed.
+    return Center(
+      child: Obx(() {
+        final hasHints = economy.hints.value > 0;
+        return _BottomActionButton(
+          icon: hasHints
+              ? Icons.lightbulb_rounded
+              : Icons.smart_display_rounded,
+          label: hasHints ? AppStrings.hint : 'Free Hint',
+          badge: hasHints ? '${economy.hints.value}' : 'Ad',
+          color: AppColors.coinGold,
+          theme: theme,
+          enabled: !_controller.isLoadingLevel.value && !_hintAdLoading,
+          onTap: () {
+            if (hasHints) {
+              _controller.onHint();
+            } else {
+              _watchAdForHint();
+            }
+          },
+        );
+      }),
     );
   }
 }

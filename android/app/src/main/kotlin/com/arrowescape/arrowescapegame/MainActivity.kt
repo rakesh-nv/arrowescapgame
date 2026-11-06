@@ -19,6 +19,8 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "sdkInt" -> result.success(Build.VERSION.SDK_INT)
+                "playGamesReady" ->
+                    result.success(ArrowEscapeApplication.playGamesReady)
                 else -> result.notImplemented()
             }
         }

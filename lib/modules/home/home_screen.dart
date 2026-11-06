@@ -12,6 +12,7 @@ import '../../widgets/app_card.dart';
 import '../../widgets/app_icon_button.dart';
 import '../../widgets/coin_badge.dart';
 import '../../widgets/difficulty_badge.dart';
+import '../../widgets/player_welcome_banner.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/secondary_button.dart';
 import '../../widgets/stat_pill.dart';
@@ -66,6 +67,14 @@ class HomeScreen extends StatelessWidget {
                                 onThemes: () => open('/themes'),
                               ),
                               const UpdateBanner(),
+                              // Only for players signed in to Play Games; the
+                              // level is their real one from saved progress,
+                              // refreshed whenever Home comes back into view.
+                              Obx(
+                                () => PlayerWelcomeBanner(
+                                  level: controller.highestUnlockedLevel.value,
+                                ),
+                              ),
                               const SizedBox(height: AppSpacing.xl),
                               const _Title(),
                               const SizedBox(height: AppSpacing.lg),

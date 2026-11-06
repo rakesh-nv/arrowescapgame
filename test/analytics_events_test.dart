@@ -162,7 +162,7 @@ void main() {
   );
 
   test(
-    'pause, resume, hint, undo and next level are logged once each',
+    'pause, resume, hint and next level are logged once each',
     () async {
       final gc = Get.put(GameplayController());
       await gc.loadLevel(3);
@@ -181,8 +181,6 @@ void main() {
       final free = LevelSolver.getAvailableArrows(level.arrows, level.gridSize);
       gc.onArrowTap(free.first.id);
       await _escapeWait();
-      gc.onUndo();
-      expect(analytics.count(AnalyticsEvent.undoUsed), 1);
 
       final order = LevelSolver.solve(level.arrows, level.gridSize).solution;
       for (final id in order) {

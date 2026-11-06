@@ -1,14 +1,16 @@
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
-/// Handles haptic feedback throughout the game.
-/// Respects the hapticsOn setting via the settings controller.
+/// Handles haptic feedback throughout the game: single short impacts only,
+/// never patterns. Respects the in-game hapticsOn setting; Android's own
+/// touch-feedback setting also applies, since Flutter's HapticFeedback goes
+/// through the system. Devices without a vibrator simply do nothing.
 class HapticService extends GetxService {
   bool _enabled = true;
 
   void setEnabled(bool enabled) => _enabled = enabled;
 
-  /// Light tap — valid arrow selection
+  /// Light tap — an arrow left the board; ad rewards
   Future<void> lightTap() async {
     if (!_enabled) return;
     try {
@@ -16,7 +18,7 @@ class HapticService extends GetxService {
     } catch (_) {}
   }
 
-  /// Medium tap — blocked arrow
+  /// Medium tap — crash / invalid move
   Future<void> mediumTap() async {
     if (!_enabled) return;
     try {
@@ -32,7 +34,7 @@ class HapticService extends GetxService {
     } catch (_) {}
   }
 
-  /// Selection click — button press
+  /// Selection click — the tap that sends an arrow on its way
   Future<void> selectionClick() async {
     if (!_enabled) return;
     try {

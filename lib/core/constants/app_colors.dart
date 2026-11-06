@@ -43,6 +43,11 @@ class AppColors {
   static const Color warning = Color(0xFFF59E0B);
 
   static const Color starGold = Color(0xFFFBBF24);
+
+  // Player welcome banner (soft mint accent)
+  static const Color mint = Color(0xFF34D399);
+  static const Color mintDark = Color(0xFF059669);
+  static const Color mintLight = Color(0xFFD1FAE5);
   static const Color starEmpty = Color(0xFFE2E8F0);
 
   // Difficulty colors

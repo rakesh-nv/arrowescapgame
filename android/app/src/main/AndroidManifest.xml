@@ -6,7 +6,7 @@
 
     <application
         android:label="Arrow Escape"
-        android:name="${applicationName}"
+        android:name=".ArrowEscapeApplication"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -48,6 +48,10 @@
         <meta-data
             android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
             android:value="true" />
+        <!-- Google Play Games Services project ID (res/values/play_games.xml). -->
+        <meta-data
+            android:name="com.google.android.gms.games.APP_ID"
+            android:value="@string/game_services_project_id" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

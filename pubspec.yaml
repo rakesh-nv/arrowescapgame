@@ -2,7 +2,7 @@ name: arrowescapegame
 description: "Arrow Escape - A premium mobile puzzle game"
 publish_to: 'none'
 
-version: 1.0.0+14
+version: 1.0.0+15
 
 environment:
   sdk: ^3.12.2
@@ -31,6 +31,7 @@ dependencies:
   google_mobile_ads: ^5.1.0
   firebase_core: 4.15.2
   firebase_analytics: 12.6.1
+  games_services: 5.3.0
 
 
 dev_dependencies:

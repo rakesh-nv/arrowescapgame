@@ -46,6 +46,10 @@ class GameplayController extends GetxController {
   /// Whether the how-to-play overlay is showing.
   final RxBool isTutorialLevel = false.obs;
   final RxString hintedArrowId = ''.obs;
+
+  /// Counts hint requests, so the board can zoom to the hinted arrow again
+  /// when Hint is pressed while the same arrow is still hinted.
+  final RxInt hintRequest = 0.obs;
   final RxString animatingArrowId = ''.obs;
 
   /// Counts own-tail crashes. Changes once per crash, so the screen shows one
@@ -127,7 +131,6 @@ class GameplayController extends GetxController {
   void onInit() {
     super.onInit();
     _syncTheme();
-    _ensureStartingHints();
     _sessionOpen = true;
     _sessionClock.start();
     _analytics.gameSessionStart();
@@ -148,12 +151,6 @@ class GameplayController extends GetxController {
   void _cancelPendingEscape() {
     _escapeTimer?.cancel();
     _escapeTimer = null;
-  }
-
-  void _ensureStartingHints() {
-    if (_economy.hints.value < AppConstants.startingHints) {
-      _economy.addHints(AppConstants.startingHints - _economy.hints.value);
-    }
   }
 
   void _syncTheme() {
@@ -177,7 +174,6 @@ class GameplayController extends GetxController {
     _dailyDateKey = null;
     levelNumber.value = lvl;
     _syncTheme();
-    _ensureStartingHints();
 
     if (LevelRepository.cachedLevel(lvl) == null) {
       isLoadingLevel.value = true;
@@ -238,7 +234,6 @@ class GameplayController extends GetxController {
     isDailyChallenge.value = true;
     _dailyDateKey = dailyDateKey ?? DailyChallenge.todayKey();
     _syncTheme();
-    _ensureStartingHints();
     _level.value = level;
     levelNumber.value = level.levelNumber;
 
@@ -324,8 +319,9 @@ class GameplayController extends GetxController {
       return;
     }
 
-    // Immediately dismiss any active hint when the user taps an arrow
-    hintedArrowId.value = '';
+    // A hint stays until the player moves the hinted arrow itself; tapping
+    // other arrows leaves it in place.
+    if (hintedArrowId.value == arrowId) hintedArrowId.value = '';
     newlyAvailableArrowIds.clear();
     _clearBlocker();
 
@@ -336,6 +332,7 @@ class GameplayController extends GetxController {
     switch (result) {
       case TapResult.valid:
         _audio.playArrowEscape();
+        // Tiny tick on the tap; a light impact follows when it leaves.
         _haptic.selectionClick();
         _startEscape(arrowId, arrowLength);
         break;
@@ -343,7 +340,8 @@ class GameplayController extends GetxController {
       case TapResult.blocked:
       case TapResult.selfCrash:
         _audio.playBlocked();
-        _haptic.lightTap();
+        // A firmer single bump than an exit, so a crash feels different.
+        _haptic.mediumTap();
         _showBlocker(arrowId);
         saveCurrentGame();
         if (result == TapResult.selfCrash) selfCrashes.value++;
@@ -389,10 +387,13 @@ class GameplayController extends GetxController {
         _escapeTimer = null;
         _engine.markArrowRemoved(arrowId);
         animatingArrowId.value = '';
-        hintedArrowId.value = '';
+        if (hintedArrowId.value == arrowId) hintedArrowId.value = '';
         newlyAvailableArrowIds.clear();
         _syncState();
         if (!_engine.isComplete()) {
+          // The arrow has left the board. The last one gets the win buzz
+          // from _checkWin instead, so two never fire back to back.
+          _haptic.lightTap();
           saveCurrentGame();
         }
         _checkWin();
@@ -400,33 +401,27 @@ class GameplayController extends GetxController {
     );
   }
 
-  void onUndo() {
-    if (!_engine.canUndo) return;
-    _clearBlocker();
-    _cancelPendingEscape();
-    _engine.undo();
-    hintedArrowId.value = '';
-    animatingArrowId.value = '';
-    newlyAvailableArrowIds.clear();
-    _syncState();
-    saveCurrentGame();
-    if (_attempt != null) _analytics.undoUsed(_attempt!);
-  }
-
   bool onHint() {
-    if (!_economy.useHint()) return false;
-
+    // The current hint is still showing (it lasts until that arrow is
+    // moved): pressing Hint again must not spend another one.
+    final shown = hintedArrowId.value;
+    if (shown.isNotEmpty &&
+        arrows.any((a) => a.id == shown && a.state == ArrowState.normal)) {
+      hintRequest.value++;
+      return true;
+    }
+    if (!_economy.hasHints) return false;
+    // Find the arrow first, so a hint is only spent when one can be shown.
     final hintId = _engine.getHintArrowId();
     if (hintId == null) return false;
+    if (!_economy.useHint()) return false;
 
     hintedArrowId.value = hintId;
+    hintRequest.value++;
     _attemptHints++;
     if (_attempt != null) _analytics.hintUsed(_attempt!);
 
-    // Clear hint highlight after 2s
-    Future.delayed(const Duration(seconds: 2), () {
-      if (hintedArrowId.value == hintId) hintedArrowId.value = '';
-    });
+    // No timeout: the arrow stays blue until the player moves it.
     return true;
   }
 
@@ -478,14 +473,25 @@ class GameplayController extends GetxController {
     return granted;
   }
 
-  /// Shows a rewarded ad for a hint. If watched, awards 1 hint to the player.
+  bool _hintAdInFlight = false;
+
+  /// Shows a rewarded ad for a hint. Awards exactly 1 hint, and only when the
+  /// ad reports the reward as earned (AdMob's onUserEarnedReward). A second
+  /// call while one ad is still open is ignored, so one ad can never pay
+  /// twice.
   Future<bool> watchAdForHint() async {
-    final granted = await _adService.showRewardedHint();
-    if (granted) {
-      _economy.addHints(1);
-      _haptic.lightTap();
+    if (_hintAdInFlight) return false;
+    _hintAdInFlight = true;
+    try {
+      final granted = await _adService.showRewardedHint();
+      if (granted) {
+        _economy.addHints(1);
+        _haptic.lightTap();
+      }
+      return granted;
+    } finally {
+      _hintAdInFlight = false;
     }
-    return granted;
   }
 
   /// Shows the how-to-play overlay again (pause menu, settings).
@@ -586,6 +592,9 @@ class GameplayController extends GetxController {
         lastCoinsEarned = AppConstants.coinsPerLevelComplete +
             (stars == 3 ? AppConstants.coinsFor3Stars : 0);
         _economy.awardLevelComplete(stars: stars);
+        // Finishing a level earns a full set of hints for the next one.
+        // Leaving or reopening a level still gives nothing.
+        _economy.refillHintsForNextLevel();
 
         if (_level.value != null) {
           _progress.markLevelCompleted(

@@ -16,6 +16,9 @@ class AppStrings {
   // Level select
   static const String levelSelect = 'Levels';
   static const String levelMap = 'Level Map';
+
+  // Player welcome banner (Google Play Games)
+  static const String heyThere = 'Hey there,';
   static const String world = 'World';
   static const String world1 = 'First Steps';
   static const String world2 = 'Winding Paths';

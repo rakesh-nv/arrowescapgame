@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Google Play Games Services project ID (digits only), from Play Console:
+      Grow users > Play Games Services > Setup and management > Configuration.
+      Leave empty until the Play Games configuration exists: while it is empty
+      the app does not start the Play Games SDK, nobody is signed in, and the
+      Home welcome banner stays hidden. The game plays normally either way.
+    -->
+    <string name="game_services_project_id" translatable="false"></string>
+</resources>

@@ -25,6 +25,10 @@ class ArrowBoardWidget extends StatefulWidget {
   final int gridSize;
   final ThemeModel theme;
   final String? hintedArrowId;
+
+  /// Bumped each time the player asks for a hint; the view then glides to
+  /// [hintedArrowId] (also when the same arrow is hinted again).
+  final int hintRequest;
   final String? blockerArrowId;
   final Set<String> newlyAvailableArrowIds;
   final bool hasEscapeInProgress;
@@ -42,6 +46,7 @@ class ArrowBoardWidget extends StatefulWidget {
     required this.theme,
     required this.onArrowTap,
     this.hintedArrowId,
+    this.hintRequest = 0,
     this.blockerArrowId,
     this.newlyAvailableArrowIds = const {},
     this.hasEscapeInProgress = false,
@@ -102,6 +107,10 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
   /// Radius of the fingertip area sampled when resolving a tap.
   static const double _fingerRadius = 6;
 
+  /// Layout of the last build, for moving the view outside build().
+  double _cellSize = 0;
+  double _maxScale = 1;
+
   /// Rounded routes of idle arrows, built once per arrow and cell size.
   final Map<String, ArrowMotionPath> _paths = {};
   double? _pathsCellSize;
@@ -145,6 +154,59 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
       _offFit = false;
       _paths.clear();
     }
+    final hint = widget.hintedArrowId;
+    if (hint != null &&
+        (hint != oldWidget.hintedArrowId ||
+            widget.hintRequest != oldWidget.hintRequest)) {
+      // After this frame's layout, so the fit and cell size are current.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.hintedArrowId == hint) _focusOnArrow(hint);
+      });
+    }
+  }
+
+  /// Glides the view so the whole hinted arrow is centred and readable:
+  /// zoomed in until cells are comfortable to tap, but never so far that
+  /// part of the arrow is cut off, and never out past the fitted picture.
+  void _focusOnArrow(String id) {
+    final size = _fitForSize;
+    if (_fitMatrix == null || size == null || _cellSize <= 0) return;
+    ArrowModel? arrow;
+    for (final a in widget.arrows) {
+      if (a.id == id) arrow = a;
+    }
+    if (arrow == null || arrow.points.isEmpty) return;
+    final cell = _cellSize;
+    var minR = arrow.points.first.$1, maxR = minR;
+    var minC = arrow.points.first.$2, maxC = minC;
+    for (final (r, c) in arrow.points) {
+      minR = min(minR, r);
+      maxR = max(maxR, r);
+      minC = min(minC, c);
+      maxC = max(maxC, c);
+    }
+    // The arrow's cells plus one cell all round (its head reaches past).
+    final rect = Rect.fromLTRB(
+      (minC - 1) * cell,
+      (minR - 1) * cell,
+      (maxC + 2) * cell,
+      (maxR + 2) * cell,
+    );
+    final wholeArrow =
+        min(size.width / rect.width, size.height / rect.height) * 0.9;
+    final comfortable = 34 / cell;
+    final current = _tc.value.getMaxScaleOnAxis();
+    final scale = min(
+      max(comfortable, current),
+      wholeArrow,
+    ).clamp(_fitScale, _maxScale);
+    _animateTo(
+      _scaleTranslate(
+        scale,
+        size.width / 2 - rect.center.dx * scale,
+        size.height / 2 - rect.center.dy * scale,
+      ),
+    );
   }
 
   void _onTransformChanged() {
@@ -347,6 +409,8 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
         // Zoom range: out to half the fitted size (the board stays centred),
         // in to at least 2.5× the fit, or until a cell is ~110 px wide.
         final maxScale = max(_fitScale * 2.5, 110 / cellSize);
+        _cellSize = cellSize;
+        _maxScale = maxScale;
 
         final idle = <ArrowModel>[];
         final active = <ArrowModel>[];

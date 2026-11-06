@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
@@ -155,8 +156,12 @@ class ArrowWidgetState extends State<ArrowWidget>
       widget.isBlocker ||
       widget.arrow.state == ArrowState.selected;
 
+  /// The hinted arrow is drawn solid blue (no pulse) until it is moved.
+  bool get _hintBlue =>
+      widget.isHinted && widget.arrow.state == ArrowState.normal;
+
   void _syncGlow() {
-    if (_highlighted) {
+    if (_highlighted && !_hintBlue) {
       if (!_glowController.isAnimating) {
         _glowController.repeat(reverse: true);
       }
@@ -207,16 +212,21 @@ class ArrowWidgetState extends State<ArrowWidget>
     if (arrow.state == ArrowState.removed) return const SizedBox.shrink();
 
     final cs = widget.cellSize;
+    final hintBlue = _hintBlue && !widget.isBlocker;
     final color = widget.isBlocker && arrow.state == ArrowState.normal
         ? Color.lerp(
             widget.theme.arrowColorFor(arrow.id),
             Colors.redAccent,
             0.7,
           )!
+        : hintBlue
+        ? (widget.theme.isDark
+              ? AppColors.accentBlueLight
+              : AppColors.accentBlue)
         : _getArrowColor();
-    // Blocked and blocker cues stay one solid colour, head included.
+    // Blocked, blocker and hint cues stay one solid colour, head included.
     final headColor =
-        widget.isBlocker || arrow.state == ArrowState.blocked
+        widget.isBlocker || arrow.state == ArrowState.blocked || hintBlue
         ? color
         : widget.theme.headColorFor(color);
     final showGlow = _highlighted;
@@ -243,7 +253,7 @@ class ArrowWidgetState extends State<ArrowWidget>
         final visualOpacity = escapeProgress == null
             ? (widget.isBlocker
                   ? 0.6 + 0.4 * _glowController.value
-                  : (showGlow ? _glowAnim.value : 1.0))
+                  : (showGlow && !hintBlue ? _glowAnim.value : 1.0))
             : 1.0 - (escapeProgress - 0.75).clamp(0.0, 0.25) / 0.25 * 0.7;
 
         // Own layer per arrow: an escaping or glowing arrow repaints alone

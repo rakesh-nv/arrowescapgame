@@ -55,7 +55,9 @@ class ArrowMotionPath {
       final corner = anchors[index];
       final incoming = anchors[index - 1] - corner;
       final outgoing = anchors[index + 1] - corner;
-      final radius = (cellSize * 0.10)
+      // A little over half the stroke width (0.22 cell), so the inside edge
+      // of each bend is very slightly rounded instead of a sharp notch.
+      final radius = (cellSize * 0.14)
           .clamp(0.0, incoming.distance * 0.48)
           .clamp(0.0, outgoing.distance * 0.48);
       final inUnit = incoming / incoming.distance;
@@ -247,24 +249,43 @@ class ArrowPainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.fill;
 
-    final path = Path();
     final hs = headSize;
     final halfWidth = hs * 0.52;
 
     final normal = Offset(-direction.dy, direction.dx);
     final base = tip - direction * hs;
-    path.moveTo(tip.dx, tip.dy);
-    path.lineTo(
-      base.dx + normal.dx * halfWidth,
-      base.dy + normal.dy * halfWidth,
+    // Same triangle as before, with its corners very slightly softened: the
+    // tip barely (it must still point clearly), the two back corners a bit
+    // more.
+    final path = _roundedPolygon(
+      [tip, base + normal * halfWidth, base - normal * halfWidth],
+      [hs * 0.05, hs * 0.10, hs * 0.10],
     );
-    path.lineTo(
-      base.dx - normal.dx * halfWidth,
-      base.dy - normal.dy * halfWidth,
-    );
-
-    path.close();
     canvas.drawPath(path, paint);
+  }
+
+  /// Closed polygon through [vertices] whose corners are cut back by
+  /// [radii] along both edges and joined with a quadratic curve.
+  static Path _roundedPolygon(List<Offset> vertices, List<double> radii) {
+    final path = Path();
+    final n = vertices.length;
+    for (var i = 0; i < n; i++) {
+      final corner = vertices[i];
+      final toPrev = vertices[(i - 1 + n) % n] - corner;
+      final toNext = vertices[(i + 1) % n] - corner;
+      final r = radii[i]
+          .clamp(0.0, toPrev.distance * 0.45)
+          .clamp(0.0, toNext.distance * 0.45);
+      final entry = corner + toPrev / toPrev.distance * r;
+      final exit = corner + toNext / toNext.distance * r;
+      if (i == 0) {
+        path.moveTo(entry.dx, entry.dy);
+      } else {
+        path.lineTo(entry.dx, entry.dy);
+      }
+      path.quadraticBezierTo(corner.dx, corner.dy, exit.dx, exit.dy);
+    }
+    return path..close();
   }
 
   @override
