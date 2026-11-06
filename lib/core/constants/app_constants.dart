@@ -75,10 +75,6 @@ class AppConstants {
   static const int themePricePremium = 8000;
   static const int themePriceRare = 10000;
 
-  // Must match `applicationId` in android/app/build.gradle.kts. Only used as a
-  // fallback when the platform cannot report its own package name.
-  static const String androidApplicationId = 'com.arrowescape.arrowescapegame';
-
   // Daily challenge
   static const String dailyChallengeBoxKey = 'daily_challenge';
 

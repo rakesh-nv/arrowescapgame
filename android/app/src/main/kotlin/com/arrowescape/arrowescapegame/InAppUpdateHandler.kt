@@ -1,95 +1,88 @@
 package com.arrowescape.arrowescapegame
 
 import android.app.Activity
-import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.InstallException
-import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.ActivityResult
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Bridges Google Play In-App Updates (com.google.android.play:app-update) to
- * Dart. All decisions (when to check, which flow, when to prompt) live in
- * Dart's UpdateService; this class only forwards Play's answers.
+ * Google Play In-App Updates, IMMEDIATE flow only
+ * (com.google.android.play:app-update). Play shows its own full-screen update
+ * UI and progress, installs the update and restarts the app; this app shows
+ * no update UI of its own.
  *
- * Methods (MethodChannel [METHOD_CHANNEL]):
- *  - packageName     → String, this install's application id
- *  - checkForUpdate  → Map describing AppUpdateInfo
- *  - startUpdate     → "accepted" | "canceled" | "failed" from the Play dialog
- *                      (args: {type: "flexible" | "immediate"})
- *  - completeUpdate  → installs a downloaded flexible update (restarts the app)
- *
- * Events (EventChannel [EVENT_CHANNEL]): InstallState maps for flexible
- * downloads (status, bytes downloaded, total bytes, error code).
+ * Method (MethodChannel [METHOD_CHANNEL]):
+ *  - startImmediateUpdate(args: {allowNewUpdate: Boolean})
+ *      Fetches a fresh AppUpdateInfo (one instance is never used for two
+ *      flows), then:
+ *        - DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS → resumes that immediate flow
+ *        - UPDATE_AVAILABLE + IMMEDIATE allowed + allowNewUpdate → starts it
+ *        - anything else → starts nothing
+ *      Returns {outcome, resumed, availableVersionCode} where outcome is one of
+ *      "noUpdate" | "notAllowed" | "busy" | "notStarted" |
+ *      "accepted" | "canceled" | "failed".
+ *      Fails with error code "CHECK_FAILED" (details: Play InstallErrorCode)
+ *      when Play cannot be asked.
  */
-class InAppUpdateHandler(private val activity: Activity) :
-    MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+class InAppUpdateHandler(private val activity: Activity) : MethodChannel.MethodCallHandler {
 
     private val manager: AppUpdateManager = AppUpdateManagerFactory.create(activity)
-    private var events: EventChannel.EventSink? = null
-    private var pendingFlow: MethodChannel.Result? = null
 
-    private val installListener = InstallStateUpdatedListener { state ->
-        events?.success(
-            mapOf(
-                "installStatus" to state.installStatus(),
-                "bytesDownloaded" to state.bytesDownloaded(),
-                "totalBytesToDownload" to state.totalBytesToDownload(),
-                "installErrorCode" to state.installErrorCode(),
-            ),
-        )
-    }
+    /** The Dart call waiting for Play's update screen to close. */
+    private var pendingFlow: MethodChannel.Result? = null
+    private var pendingResumed = false
+    private var pendingVersionCode = 0
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "packageName" -> result.success(activity.packageName)
-            "checkForUpdate" -> checkForUpdate(result)
-            "startUpdate" -> startUpdate(call.argument<String>("type"), result)
-            "completeUpdate" -> completeUpdate(result)
+            "startImmediateUpdate" ->
+                startImmediateUpdate(call.argument<Boolean>("allowNewUpdate") ?: true, result)
             else -> result.notImplemented()
         }
     }
 
-    private fun checkForUpdate(result: MethodChannel.Result) {
-        manager.appUpdateInfo
-            .addOnSuccessListener { info -> result.success(info.toMap()) }
-            .addOnFailureListener { e ->
-                result.error("CHECK_FAILED", e.message, errorCodeOf(e))
-            }
-    }
-
-    private fun startUpdate(type: String?, result: MethodChannel.Result) {
-        val updateType =
-            if (type == "immediate") AppUpdateType.IMMEDIATE else AppUpdateType.FLEXIBLE
-        // Always start from fresh info: a stale AppUpdateInfo cannot start a flow.
+    private fun startImmediateUpdate(allowNewUpdate: Boolean, result: MethodChannel.Result) {
+        // Only one update screen at a time.
+        if (pendingFlow != null) {
+            result.success(outcome("busy"))
+            return
+        }
         manager.appUpdateInfo
             .addOnSuccessListener { info ->
-                val availability = info.updateAvailability()
-                // A flow the app already started is resumed as-is (Play's
-                // documented recovery for an interrupted immediate update).
-                val resuming =
-                    availability == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS
-                val startable = resuming ||
-                    (availability == UpdateAvailability.UPDATE_AVAILABLE &&
-                        info.isUpdateTypeAllowed(updateType))
-                if (!startable) {
-                    result.error("UPDATE_NOT_ALLOWED", "No update of this type is available", null)
+                if (pendingFlow != null) {
+                    result.success(outcome("busy"))
                     return@addOnSuccessListener
                 }
-                pendingFlow?.success("canceled")
+                val versionCode = info.availableVersionCode()
+                val availability = info.updateAvailability()
+                val resuming =
+                    availability == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS
+                val available = availability == UpdateAvailability.UPDATE_AVAILABLE
+                when {
+                    resuming -> Unit
+                    !available -> {
+                        result.success(outcome("noUpdate", versionCode = versionCode))
+                        return@addOnSuccessListener
+                    }
+                    !allowNewUpdate || !info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE) -> {
+                        result.success(outcome("notAllowed", versionCode = versionCode))
+                        return@addOnSuccessListener
+                    }
+                }
                 pendingFlow = result
+                pendingResumed = resuming
+                pendingVersionCode = versionCode
                 val started = try {
                     manager.startUpdateFlowForResult(
                         info,
                         activity,
-                        AppUpdateOptions.newBuilder(updateType).build(),
+                        AppUpdateOptions.defaultOptions(AppUpdateType.IMMEDIATE),
                         REQUEST_CODE,
                     )
                 } catch (e: Exception) {
@@ -97,71 +90,47 @@ class InAppUpdateHandler(private val activity: Activity) :
                 }
                 if (!started && pendingFlow === result) {
                     pendingFlow = null
-                    result.error("FLOW_NOT_STARTED", "Play could not show the update flow", null)
+                    result.success(outcome("notStarted", resuming, versionCode))
                 }
             }
             .addOnFailureListener { e ->
-                result.error("CHECK_FAILED", e.message, errorCodeOf(e))
-            }
-    }
-
-    private fun completeUpdate(result: MethodChannel.Result) {
-        manager.completeUpdate()
-            .addOnSuccessListener { result.success(true) }
-            .addOnFailureListener { e ->
-                result.error("COMPLETE_FAILED", e.message, errorCodeOf(e))
+                result.error("CHECK_FAILED", e.message, (e as? InstallException)?.errorCode)
             }
     }
 
     /** Returns true when [requestCode] belonged to the update flow. */
     fun onActivityResult(requestCode: Int, resultCode: Int): Boolean {
         if (requestCode != REQUEST_CODE) return false
-        val outcome = when (resultCode) {
+        val name = when (resultCode) {
+            // For IMMEDIATE, Play usually restarts the app before this arrives.
             Activity.RESULT_OK -> "accepted"
             Activity.RESULT_CANCELED -> "canceled"
             ActivityResult.RESULT_IN_APP_UPDATE_FAILED -> "failed"
             else -> "failed"
         }
-        pendingFlow?.success(outcome)
-        pendingFlow = null
+        finishPending(name)
         return true
     }
 
-    override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
-        events = sink
-        manager.registerListener(installListener)
-    }
-
-    override fun onCancel(arguments: Any?) {
-        manager.unregisterListener(installListener)
-        events = null
-    }
-
     fun dispose() {
-        manager.unregisterListener(installListener)
-        events = null
-        pendingFlow?.success("canceled")
-        pendingFlow = null
+        finishPending("canceled")
     }
 
-    private fun errorCodeOf(e: Exception): Int? = (e as? InstallException)?.errorCode
+    private fun finishPending(name: String) {
+        val flow = pendingFlow ?: return
+        pendingFlow = null
+        flow.success(outcome(name, pendingResumed, pendingVersionCode))
+    }
 
-    private fun AppUpdateInfo.toMap(): Map<String, Any?> = mapOf(
-        "updateAvailability" to updateAvailability(),
-        "installStatus" to installStatus(),
-        "availableVersionCode" to availableVersionCode(),
-        "updatePriority" to updatePriority(),
-        "clientVersionStalenessDays" to clientVersionStalenessDays(),
-        "immediateAllowed" to isUpdateTypeAllowed(AppUpdateType.IMMEDIATE),
-        "flexibleAllowed" to isUpdateTypeAllowed(AppUpdateType.FLEXIBLE),
-        "bytesDownloaded" to bytesDownloaded(),
-        "totalBytesToDownload" to totalBytesToDownload(),
-        "packageName" to packageName(),
-    )
+    private fun outcome(name: String, resumed: Boolean = false, versionCode: Int = 0) =
+        mapOf(
+            "outcome" to name,
+            "resumed" to resumed,
+            "availableVersionCode" to versionCode,
+        )
 
     companion object {
         const val METHOD_CHANNEL = "com.arrowescape.arrowescapegame/update"
-        const val EVENT_CHANNEL = "com.arrowescape.arrowescapegame/update_events"
         private const val REQUEST_CODE = 0x5EED
     }
 }

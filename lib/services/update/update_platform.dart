@@ -23,74 +23,32 @@ abstract class UpdatePlatform {
   /// False where Play in-app updates cannot exist (iOS, desktop, tests).
   bool get isSupported;
 
-  Future<String?> packageName();
-
-  /// Throws [UpdateException] when Play cannot answer.
-  Future<AppUpdateInfoData> checkForUpdate();
-
-  /// Shows Play's update UI. Throws [UpdateException] if it cannot start.
-  Future<UpdateFlowResult> startUpdate(UpdateType type);
-
-  /// Installs a downloaded flexible update; Android restarts the app.
-  Future<void> completeUpdate();
-
-  Stream<InstallStateData> get installStates;
+  /// Asks Play (with fresh update info) to resume an interrupted immediate
+  /// update, or, when [allowNewUpdate], to start one for an available
+  /// version. Completes when Play's update screen closes (or right away when
+  /// nothing was shown). Throws [UpdateException] when Play cannot answer.
+  Future<UpdateAttempt> startImmediateUpdate({required bool allowNewUpdate});
 }
 
 /// Talks to InAppUpdateHandler.kt.
 class PlayUpdatePlatform implements UpdatePlatform {
   static const _methods =
       MethodChannel('com.arrowescape.arrowescapegame/update');
-  static const _events =
-      EventChannel('com.arrowescape.arrowescapegame/update_events');
-
-  Stream<InstallStateData>? _states;
 
   @override
   bool get isSupported => true;
 
   @override
-  Future<String?> packageName() async {
+  Future<UpdateAttempt> startImmediateUpdate({
+    required bool allowNewUpdate,
+  }) async {
     try {
-      return await _methods.invokeMethod<String>('packageName');
-    } on PlatformException {
-      return null;
-    } on MissingPluginException {
-      return null;
-    }
-  }
-
-  @override
-  Future<AppUpdateInfoData> checkForUpdate() async {
-    final map = await _invoke<Map<dynamic, dynamic>>('checkForUpdate');
-    if (map == null) throw const UpdateException('EMPTY_RESPONSE');
-    return AppUpdateInfoData.fromMap(map);
-  }
-
-  @override
-  Future<UpdateFlowResult> startUpdate(UpdateType type) async {
-    final outcome = await _invoke<String>('startUpdate', {'type': type.name});
-    return switch (outcome) {
-      'accepted' => UpdateFlowResult.accepted,
-      'canceled' => UpdateFlowResult.canceled,
-      _ => UpdateFlowResult.failed,
-    };
-  }
-
-  @override
-  Future<void> completeUpdate() => _invoke<Object?>('completeUpdate');
-
-  @override
-  Stream<InstallStateData> get installStates =>
-      _states ??= _events
-          .receiveBroadcastStream()
-          .where((e) => e is Map)
-          .map((e) => InstallStateData.fromMap(e as Map))
-          .asBroadcastStream();
-
-  Future<T?> _invoke<T>(String method, [Object? args]) async {
-    try {
-      return await _methods.invokeMethod<T>(method, args);
+      final map = await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'startImmediateUpdate',
+        {'allowNewUpdate': allowNewUpdate},
+      );
+      if (map == null) throw const UpdateException('EMPTY_RESPONSE');
+      return UpdateAttempt.fromMap(map);
     } on PlatformException catch (e) {
       throw UpdateException(
         e.code,
@@ -109,20 +67,8 @@ class NoOpUpdatePlatform implements UpdatePlatform {
   bool get isSupported => false;
 
   @override
-  Future<String?> packageName() async => null;
-
-  @override
-  Future<AppUpdateInfoData> checkForUpdate() async =>
+  Future<UpdateAttempt> startImmediateUpdate({
+    required bool allowNewUpdate,
+  }) async =>
       throw const UpdateException('UNSUPPORTED');
-
-  @override
-  Future<UpdateFlowResult> startUpdate(UpdateType type) async =>
-      throw const UpdateException('UNSUPPORTED');
-
-  @override
-  Future<void> completeUpdate() async =>
-      throw const UpdateException('UNSUPPORTED');
-
-  @override
-  Stream<InstallStateData> get installStates => const Stream.empty();
 }

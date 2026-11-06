@@ -1,3 +1,4 @@
+import 'package:arrowescapegame/game/renderer/arrow_collision.dart';
 import 'package:arrowescapegame/core/constants/app_constants.dart';
 import 'package:arrowescapegame/data/models/arrow_state.dart';
 import 'package:arrowescapegame/data/models/player_progress.dart';
@@ -98,8 +99,14 @@ void main() {
       final blocked = level.arrows.firstWhere((a) => !free.contains(a.id));
 
       gc.onArrowTap(blocked.id);
-      expect(haptics, ['HapticFeedbackType.mediumImpact']);
+      // The life is spent at once; the bump lands when the arrow, having
+      // travelled up to the obstacle, touches it.
       expect(gc.lives.value, AppConstants.startingLives - 1);
+      expect(haptics, isEmpty);
+      await Future.delayed(
+        const Duration(milliseconds: CrashTiming.maxTotalMs + 60),
+      );
+      expect(haptics, ['HapticFeedbackType.mediumImpact']);
       expect(
         gc.arrows.firstWhere((a) => a.id == blocked.id).state,
         isNot(ArrowState.removed),

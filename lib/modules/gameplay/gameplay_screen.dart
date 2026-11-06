@@ -380,19 +380,26 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   Widget _buildScaffold(ThemeModel theme) {
+    // Light themes: header, board and Hint area share one plain white
+    // background (same white as the board). Dark themes keep their gradient.
+    final plainWhite = !theme.isDark;
     return Scaffold(
-      backgroundColor: theme.backgroundColor,
+      backgroundColor: plainWhite
+          ? ArrowBoardWidget.lightBoardColor
+          : theme.backgroundColor,
       body: Stack(
         children: [
-          // Background gradient
+          // Background gradient (dark themes) or plain white (light themes)
           Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: theme.backgroundGradient,
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
+            decoration: plainWhite
+                ? const BoxDecoration(color: ArrowBoardWidget.lightBoardColor)
+                : BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: theme.backgroundGradient,
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
           ),
 
           // Main content

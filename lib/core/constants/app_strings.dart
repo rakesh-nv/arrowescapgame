@@ -198,42 +198,4 @@ class AppStrings {
 
   // Errors
   static const String blocked = 'Blocked!';
-
-  // App updates
-  static const String updateAvailableTitle = 'Update available';
-  static const String updateAvailableBody =
-      'A newer version of Arrow Escape is ready on Google Play. '
-      'It downloads in the background, so you can keep playing.';
-  static const String updateAvailableBodyImmediate =
-      'A newer version of Arrow Escape is ready on Google Play.';
-  static const String updateRequiredTitle = 'Update required';
-  static const String updateRequiredBody =
-      'This version of Arrow Escape is out of date and needs an important '
-      'update before you can keep playing. Your levels, stars, coins and '
-      'themes stay on this device.';
-  static const String updateNow = 'Update Now';
-  static const String updateLater = 'Later';
-  static const String updateOnPlay = 'Update on Google Play';
-  static const String updateDownloading = 'Downloading update';
-  static const String updateReadyTitle = 'Update ready';
-  static const String updateReadyBody =
-      'The new version has downloaded. Restart Arrow Escape to finish '
-      'installing it. Your progress is saved.';
-  static const String updateRestart = 'Restart & Update';
-  static const String updateInstalling = 'Installing update…';
-  static const String updateFailed =
-      'The update could not be completed. Please try again.';
-  static const String checkForUpdates = 'Check for Updates';
-  static const String checkingForUpdates = 'Checking for updates…';
-  static const String upToDateTitle = "You're up to date";
-  static const String upToDateBody =
-      'You have the latest version of Arrow Escape.';
-  static const String updateCheckFailedTitle = "Couldn't check for updates";
-  static const String updateCheckOffline =
-      "Google Play couldn't be reached. Check your internet connection, "
-      'or open the Play Store listing instead.';
-  static const String updateCheckUnavailable =
-      "In-app updates work only when Arrow Escape is installed from Google "
-      'Play. You can still look for a newer version on the Play Store.';
-  static const String close = 'Close';
 }

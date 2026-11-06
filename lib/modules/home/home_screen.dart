@@ -17,8 +17,6 @@ import '../../widgets/primary_button.dart';
 import '../../widgets/secondary_button.dart';
 import '../../widgets/stat_pill.dart';
 import '../ads/ads_module.dart';
-import '../update/update_banner.dart';
-import '../update/update_prompts.dart';
 import 'home_controller.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -32,7 +30,6 @@ class HomeScreen extends StatelessWidget {
     void open(String route, {Object? arguments}) {
       Get.toNamed(route, arguments: arguments)?.then((_) {
         controller.loadProgress();
-        UpdatePrompts.onHomeVisible();
       });
     }
 
@@ -66,7 +63,6 @@ class HomeScreen extends StatelessWidget {
                                 onSettings: () => open('/settings'),
                                 onThemes: () => open('/themes'),
                               ),
-                              const UpdateBanner(),
                               // Only for players signed in to Play Games; the
                               // level is their real one from saved progress,
                               // refreshed whenever Home comes back into view.

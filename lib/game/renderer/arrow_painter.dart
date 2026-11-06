@@ -55,9 +55,10 @@ class ArrowMotionPath {
       final corner = anchors[index];
       final incoming = anchors[index - 1] - corner;
       final outgoing = anchors[index + 1] - corner;
-      // A little over half the stroke width (0.22 cell), so the inside edge
-      // of each bend is very slightly rounded instead of a sharp notch.
-      final radius = (cellSize * 0.14)
+      // Just over half the stroke width (0.20 cell): the inside edge of each
+      // bend is barely rounded and the outside a little more, like the
+      // reference art, without looking like a curve.
+      final radius = (cellSize * 0.11)
           .clamp(0.0, incoming.distance * 0.48)
           .clamp(0.0, outgoing.distance * 0.48);
       final inUnit = incoming / incoming.distance;
@@ -141,6 +142,9 @@ class ArrowPainter extends CustomPainter {
   /// through the bends, producing the reference snake/uncoiling motion.
   final double? snakeProgress;
 
+  /// Exact snake shift in pixels (a crash run); overrides [snakeProgress].
+  final double? snakeShift;
+
   final Offset shakeOffset;
   final ArrowMotionPath motionPath;
 
@@ -153,6 +157,7 @@ class ArrowPainter extends CustomPainter {
     this.showGlow = false,
     this.opacity = 1.0,
     this.snakeProgress,
+    this.snakeShift,
     this.shakeOffset = Offset.zero,
     required this.motionPath,
   });
@@ -167,15 +172,18 @@ class ArrowPainter extends CustomPainter {
     final strokeWidth = PuzzleConfig.strokeWidthFor(cellSize);
     final headSize = PuzzleConfig.headSizeFor(cellSize);
     final progress = snakeProgress ?? 0.0;
-    final shift = snakeProgress == null
-        ? 0.0
-        : (motionPath.length + cellSize * (arrow.length + 2)) * progress;
+    final shift =
+        snakeShift ??
+        (snakeProgress == null
+            ? 0.0
+            : (motionPath.length + cellSize * (arrow.length + 2)) * progress);
     final animated = motionPath.snakePoints(shift);
     final lastPt = animated.last + shakeOffset;
     final headDirection = motionPath.directionAt(shift + motionPath.length);
+    // The tip sits a quarter cell past the head cell's centre.
     final tip = Offset(
-      lastPt.dx + headDirection.dx * (cellSize * 0.35),
-      lastPt.dy + headDirection.dy * (cellSize * 0.35),
+      lastPt.dx + headDirection.dx * (cellSize * 0.25),
+      lastPt.dy + headDirection.dy * (cellSize * 0.25),
     );
 
     // Build the continuous snake path from tail to head
@@ -250,16 +258,16 @@ class ArrowPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final hs = headSize;
-    final halfWidth = hs * 0.52;
+    // Symmetric, slightly narrower than long (width ≈ 0.96 × length).
+    final halfWidth = hs * 0.48;
 
     final normal = Offset(-direction.dy, direction.dx);
     final base = tip - direction * hs;
-    // Same triangle as before, with its corners very slightly softened: the
-    // tip barely (it must still point clearly), the two back corners a bit
-    // more.
+    // Sharp tip; only the two back corners are faintly softened so they
+    // don't alias into jagged points.
     final path = _roundedPolygon(
       [tip, base + normal * halfWidth, base - normal * halfWidth],
-      [hs * 0.05, hs * 0.10, hs * 0.10],
+      [0.0, hs * 0.06, hs * 0.06],
     );
     canvas.drawPath(path, paint);
   }
@@ -295,6 +303,7 @@ class ArrowPainter extends CustomPainter {
         oldDelegate.showGlow != showGlow ||
         oldDelegate.opacity != opacity ||
         oldDelegate.snakeProgress != snakeProgress ||
+        oldDelegate.snakeShift != snakeShift ||
         oldDelegate.shakeOffset != shakeOffset ||
         oldDelegate.arrow.state != arrow.state ||
         oldDelegate.arrow.points != arrow.points;

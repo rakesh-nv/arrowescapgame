@@ -14,6 +14,7 @@ import '../../data/repositories/progress_repository.dart';
 import '../../data/repositories/theme_repository.dart';
 import '../../game/engine/game_engine.dart';
 import '../../game/models/tap_result.dart';
+import '../../game/renderer/arrow_collision.dart';
 import '../../game/solver/level_solver.dart';
 import '../ads/ads_module.dart';
 import '../../services/analytics_service.dart';
@@ -85,6 +86,12 @@ class GameplayController extends GetxController {
   /// replaced (undo, reset, level load, dispose) so it cannot act on stale state.
   Timer? _escapeTimer;
 
+  /// A blocked arrow's crash run (travel, impact, return) owns the board
+  /// until it is back in place; these fire the impact and the end.
+  Timer? _crashImpactTimer;
+  Timer? _crashEndTimer;
+  String? _crashingArrowId;
+
   // ── Analytics ─────────────────────────────────────────────────────────────
   /// Attempts per level in this app run, for `attempt_number`.
   static final Map<String, int> _attemptCounts = {};
@@ -151,6 +158,11 @@ class GameplayController extends GetxController {
   void _cancelPendingEscape() {
     _escapeTimer?.cancel();
     _escapeTimer = null;
+    _crashImpactTimer?.cancel();
+    _crashImpactTimer = null;
+    _crashEndTimer?.cancel();
+    _crashEndTimer = null;
+    _crashingArrowId = null;
   }
 
   void _syncTheme() {
@@ -315,6 +327,7 @@ class GameplayController extends GetxController {
         isGameOver.value ||
         isLoadingLevel.value ||
         animatingArrowId.value.isNotEmpty ||
+        _crashingArrowId != null ||
         lives.value <= 0) {
       return;
     }
@@ -326,6 +339,16 @@ class GameplayController extends GetxController {
     _clearBlocker();
 
     final arrowLength = _engine.arrowLength(arrowId);
+    final tappedArrow = _engine.activeArrows
+        .where((a) => a.id == arrowId)
+        .firstOrNull;
+    final crashCells = tappedArrow == null
+        ? null
+        : ArrowCollision.laneCellsToCollision(
+            tappedArrow,
+            _engine.activeArrows,
+            _engine.gridSize,
+          );
     final result = _engine.tapArrow(arrowId);
     _syncState();
 
@@ -339,40 +362,51 @@ class GameplayController extends GetxController {
 
       case TapResult.blocked:
       case TapResult.selfCrash:
-        _audio.playBlocked();
-        // A firmer single bump than an exit, so a crash feels different.
-        _haptic.mediumTap();
-        _showBlocker(arrowId);
-        saveCurrentGame();
+        _startCrash(arrowId, crashCells ?? 1);
         if (result == TapResult.selfCrash) selfCrashes.value++;
-
-        if (_engine.lives <= 0) {
-          Future.delayed(
-            const Duration(
-              milliseconds: AppConstants.blockedAnimDurationMs + 100,
-            ),
-            () {
-              if (_engine.lives <= 0 && !isComplete.value) {
-                isGameOver.value = true;
-                _reportFail();
-              }
-            },
-          );
-        }
-
-        // Reset the blocked state after subtle bump animation
-        Future.delayed(
-          const Duration(milliseconds: AppConstants.blockedAnimDurationMs + 50),
-          () {
-            _engine.resetBlockedArrow(arrowId);
-            _syncState();
-          },
-        );
         break;
 
       case TapResult.ignored:
         break;
     }
+  }
+
+  /// A blocked tap: the life is already spent. The arrow travels until it
+  /// touches the obstacle (drawn by the board), where the crash sound and
+  /// vibration play; once it is back in place the board is free again.
+  void _startCrash(String arrowId, int cellsToObstacle) {
+    _crashingArrowId = arrowId;
+    _showBlocker(
+      arrowId,
+      holdMs: CrashTiming.travelMs(cellsToObstacle) + 700,
+    );
+    saveCurrentGame();
+
+    _crashImpactTimer?.cancel();
+    _crashImpactTimer = Timer(
+      Duration(milliseconds: CrashTiming.travelMs(cellsToObstacle)),
+      () {
+        _crashImpactTimer = null;
+        _audio.playBlocked();
+        // A firmer single bump than an exit, so a crash feels different.
+        _haptic.mediumTap();
+      },
+    );
+
+    _crashEndTimer?.cancel();
+    _crashEndTimer = Timer(
+      Duration(milliseconds: CrashTiming.totalMs(cellsToObstacle) + 20),
+      () {
+        _crashEndTimer = null;
+        _crashingArrowId = null;
+        _engine.resetBlockedArrow(arrowId);
+        _syncState();
+        if (_engine.lives <= 0 && !isComplete.value && !isGameOver.value) {
+          isGameOver.value = true;
+          _reportFail();
+        }
+      },
+    );
   }
 
   /// Runs the escape animation, then removes the arrow and checks for a win.
@@ -549,7 +583,7 @@ class GameplayController extends GetxController {
   // ── Private ───────────────────────────────────────────────────────────────
 
   /// Briefly highlights the arrow standing in the tapped arrow's exit lane.
-  void _showBlocker(String tappedId) {
+  void _showBlocker(String tappedId, {int holdMs = 700}) {
     final active = _engine.activeArrows;
     final tapped = active.where((a) => a.id == tappedId).firstOrNull;
     if (tapped == null) return;
@@ -557,7 +591,7 @@ class GameplayController extends GetxController {
     if (blocker == null) return;
     blockerArrowId.value = blocker;
     _blockerTimer?.cancel();
-    _blockerTimer = Timer(const Duration(milliseconds: 700), _clearBlocker);
+    _blockerTimer = Timer(Duration(milliseconds: holdMs), _clearBlocker);
   }
 
   void _clearBlocker() {

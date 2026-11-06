@@ -86,10 +86,10 @@ void main() {
     // Under a quarter of a cell: neighbouring paths keep a wide clear gap.
     expect(body.strokeWidth, lessThanOrEqualTo(_cell * 0.25));
     final head = PuzzleConfig.headSizeFor(_cell);
-    // Head: ~0.6 cell long, about 1.04× as wide, so it is clearly visible
+    // Head: ~0.6 cell long, about 0.96× as wide, so it is clearly visible
     // (2.5× the stroke or more) yet narrower than one cell.
     expect(head, greaterThanOrEqualTo(body.strokeWidth * 2.5));
-    expect(head * 1.04, lessThan(_cell));
+    expect(head * 0.96, lessThan(_cell));
     // Layout and painter use the same formulas.
     final config = PuzzleConfig.adaptive(screenWidth: 360, overrideGridSize: 24);
     expect(config.pathThickness, PuzzleConfig.strokeWidthFor(config.cellSpacing));

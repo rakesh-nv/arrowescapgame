@@ -117,7 +117,7 @@ class AppInitializationService {
         ),
       );
       await initializeAds();
-      initializeUpdates(storageService);
+      initializeUpdates();
       initializePlayGames();
 
       // 5. Level System & Initial Level Preparation (Critical/Core)
@@ -140,6 +140,9 @@ class AppInitializationService {
       );
 
       _isInitialized = true;
+      // Google Play immediate update check, in the background. Play shows
+      // its own full-screen update UI if a newer version is available.
+      unawaited(Get.find<UpdateService>().checkOnStartup());
       onProgress(
         const InitializationProgress(
           progress: 1.0,
@@ -265,8 +268,6 @@ class AppInitializationService {
     Get.put<IAnalyticsService>(service, permanent: true);
   }
 
-  /// Registers the in-app update service. Only wiring happens here; the
-  /// network check runs later from Home, so startup never waits on Play.
   /// Registers Google Play Games and starts looking for the player signed
   /// in automatically at launch, in the background: startup never waits on
   /// Play Games, and any failure leaves a guest profile.
@@ -282,7 +283,9 @@ class AppInitializationService {
     unawaited(service.start());
   }
 
-  static void initializeUpdates(StorageService storageService) {
+  /// Registers the Google Play in-app update service (immediate updates
+  /// only). Only wiring happens here; the check starts once startup is done.
+  static void initializeUpdates() {
     if (Get.isRegistered<UpdateService>()) return;
     final UpdatePlatform platform;
     if (!kIsWeb &&
@@ -293,7 +296,7 @@ class AppInitializationService {
       platform = NoOpUpdatePlatform();
     }
     Get.put<UpdateService>(
-      UpdateService(platform, storageService),
+      UpdateService(platform),
       permanent: true,
     );
   }

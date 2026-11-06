@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:arrowescapegame/game/renderer/arrow_collision.dart';
 import 'package:arrowescapegame/core/constants/app_constants.dart';
 import 'package:arrowescapegame/core/constants/app_strings.dart';
 import 'package:arrowescapegame/data/models/arrow_model.dart';
@@ -326,9 +327,8 @@ void main() {
 
     tearDown(Get.reset);
 
-    const crashAnim = Duration(
-      milliseconds: AppConstants.blockedAnimDurationMs + 150,
-    );
+    // A crash run: travel to the obstacle, impact, slide back.
+    const crashAnim = Duration(milliseconds: CrashTiming.maxTotalMs + 60);
     final escape = Duration(
       milliseconds: AppConstants.arrowFlightDurationForLength(45) + 60,
     );

@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
 import '../../data/models/theme_model.dart';
+import 'arrow_collision.dart';
 import 'arrow_painter.dart';
 
 /// An animated snake arrow widget on the game board.
 ///
 /// Handles:
-/// - Smooth blocked bump animation in exit direction
+/// - Crash run when blocked: travels along its path, stops where it touches
+///   another arrow, turns red on impact, then slides back
 /// - Immediate snake-style escape with fluid acceleration
 /// - Glow pulse when hinted or selected
 class ArrowWidget extends StatefulWidget {
@@ -25,6 +28,12 @@ class ArrowWidget extends StatefulWidget {
   /// Top-left offset of the compact visual grid within the touch board.
   final Offset origin;
 
+  /// Blocked arrows: how far (scene px of snake shift) the arrow travels
+  /// before it touches an obstacle, and how long that takes. See
+  /// [ArrowCollision.crashTravel] and [CrashTiming].
+  final double crashTravel;
+  final int crashTravelMs;
+
   const ArrowWidget({
     super.key,
     required this.arrow,
@@ -34,6 +43,8 @@ class ArrowWidget extends StatefulWidget {
     required this.isHinted,
     this.isBlocker = false,
     this.origin = Offset.zero,
+    this.crashTravel = 0,
+    this.crashTravelMs = 110,
   });
 
   @override
@@ -42,27 +53,21 @@ class ArrowWidget extends StatefulWidget {
 
 class ArrowWidgetState extends State<ArrowWidget>
     with TickerProviderStateMixin {
-  late AnimationController _shakeController;
+  late AnimationController _crashController;
   late AnimationController _escapeController;
   late AnimationController _glowController;
 
-  late Animation<double> _shakeAnim;
   late Animation<double> _glowAnim;
   late ArrowMotionPath _motionPath;
 
-  bool _isShaking = false;
+  bool _isCrashing = false;
   bool _isEscaping = false;
 
   @override
   void initState() {
     super.initState();
 
-    _shakeController = AnimationController(
-      vsync: this,
-      duration: const Duration(
-        milliseconds: AppConstants.blockedAnimDurationMs,
-      ),
-    );
+    _crashController = AnimationController(vsync: this);
 
     _escapeController = AnimationController(
       vsync: this,
@@ -80,16 +85,6 @@ class ArrowWidgetState extends State<ArrowWidget>
     );
     _syncGlow();
 
-    // Subtle obstacle bump in exit direction
-    _shakeAnim =
-        TweenSequence<double>([
-          TweenSequenceItem(tween: Tween(begin: 0.0, end: 3.5), weight: 4),
-          TweenSequenceItem(tween: Tween(begin: 3.5, end: -1.0), weight: 3),
-          TweenSequenceItem(tween: Tween(begin: -1.0, end: 0.0), weight: 3),
-        ]).animate(
-          CurvedAnimation(parent: _shakeController, curve: Curves.easeOutQuad),
-        );
-
     _glowAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
     );
@@ -104,12 +99,12 @@ class ArrowWidgetState extends State<ArrowWidget>
     // arrow its own widget once it becomes active, so the widget may be
     // created already escaping or blocked.
     if (widget.arrow.state == ArrowState.escaping) _playEscape();
-    if (widget.arrow.state == ArrowState.blocked) _playShake();
+    if (widget.arrow.state == ArrowState.blocked) _playCrash();
   }
 
   @override
   void dispose() {
-    _shakeController.dispose();
+    _crashController.dispose();
     _escapeController.dispose();
     _glowController.dispose();
     super.dispose();
@@ -139,15 +134,16 @@ class ArrowWidgetState extends State<ArrowWidget>
     final oldState = oldWidget.arrow.state;
 
     if (newState == ArrowState.blocked && oldState != ArrowState.blocked) {
-      _playShake();
+      _playCrash();
     }
 
     if (newState == ArrowState.escaping && oldState != ArrowState.escaping) {
       _playEscape();
     }
 
-    if (newState == ArrowState.normal && !widget.isHinted) {
-      _shakeController.reset();
+    if (newState == ArrowState.normal && _isCrashing) {
+      _crashController.reset();
+      _isCrashing = false;
     }
   }
 
@@ -172,13 +168,39 @@ class ArrowWidgetState extends State<ArrowWidget>
     }
   }
 
-  void _playShake() {
-    _isShaking = true;
-    _shakeController.forward(from: 0).then((_) {
-      if (mounted) {
-        setState(() => _isShaking = false);
-      }
-    });
+  int get _crashTotalMs =>
+      widget.crashTravelMs + CrashTiming.impactHoldMs + CrashTiming.returnMs;
+
+  void _playCrash() {
+    _isCrashing = true;
+    _crashController
+      ..duration = Duration(milliseconds: _crashTotalMs)
+      ..forward(from: 0).then((_) {
+        if (mounted) setState(() => _isCrashing = false);
+      });
+  }
+
+  /// Elapsed crash time in ms.
+  double get _crashMs => _crashController.value * _crashTotalMs;
+
+  /// True once the arrow has reached the obstacle.
+  bool get _crashImpacted => _isCrashing && _crashMs >= widget.crashTravelMs;
+
+  /// Snake shift during a crash run: accelerate to the contact point, stop
+  /// dead there with a small recoil, then glide back to rest.
+  double _crashShift() {
+    final travel = widget.crashTravel;
+    final ms = _crashMs;
+    final t1 = widget.crashTravelMs.toDouble();
+    if (ms < t1) return travel * Curves.easeInQuad.transform(ms / t1);
+    final t2 = t1 + CrashTiming.impactHoldMs;
+    if (ms < t2) {
+      final u = (ms - t1) / CrashTiming.impactHoldMs;
+      final recoil = math.min(travel, widget.cellSize * 0.06);
+      return travel - recoil * math.sin(math.pi * u);
+    }
+    final u = ((ms - t2) / CrashTiming.returnMs).clamp(0.0, 1.0);
+    return travel * (1 - Curves.easeOutCubic.transform(u));
   }
 
   void _playEscape() {
@@ -196,7 +218,10 @@ class ArrowWidgetState extends State<ArrowWidget>
       case ArrowState.selected:
         return theme.accentColor;
       case ArrowState.blocked:
-        return Colors.redAccent;
+        // Red from the moment it touches the obstacle, not before.
+        return _crashImpacted || !_isCrashing
+            ? Colors.redAccent
+            : theme.arrowColorFor(widget.arrow.id);
       case ArrowState.escaping:
         return theme.accentColor;
       case ArrowState.removed:
@@ -213,38 +238,37 @@ class ArrowWidgetState extends State<ArrowWidget>
 
     final cs = widget.cellSize;
     final hintBlue = _hintBlue && !widget.isBlocker;
-    final color = widget.isBlocker && arrow.state == ArrowState.normal
-        ? Color.lerp(
-            widget.theme.arrowColorFor(arrow.id),
-            Colors.redAccent,
-            0.7,
-          )!
-        : hintBlue
-        ? (widget.theme.isDark
-              ? AppColors.accentBlueLight
-              : AppColors.accentBlue)
-        : _getArrowColor();
-    // Blocked, blocker and hint cues stay one solid colour, head included.
-    final headColor =
-        widget.isBlocker || arrow.state == ArrowState.blocked || hintBlue
-        ? color
-        : widget.theme.headColorFor(color);
     final showGlow = _highlighted;
-    final dir = arrow.exitDirection;
 
     return AnimatedBuilder(
       animation: Listenable.merge([
-        _shakeController,
+        _crashController,
         _escapeController,
         _glowController,
       ]),
       builder: (context, child) {
-        // Compute subtle bump offset in direction of travel if blocked
-        double shakeX = 0, shakeY = 0;
-        if (_isShaking) {
-          shakeX = dir.dCol * _shakeAnim.value;
-          shakeY = dir.dRow * _shakeAnim.value;
-        }
+        final color = widget.isBlocker && arrow.state == ArrowState.normal
+            ? Color.lerp(
+                widget.theme.arrowColorFor(arrow.id),
+                Colors.redAccent,
+                0.7,
+              )!
+            : hintBlue
+            ? (widget.theme.isDark
+                  ? AppColors.accentBlueLight
+                  : AppColors.accentBlue)
+            : _getArrowColor();
+        // Blocked (after impact), blocker and hint cues stay one solid
+        // colour, head included.
+        final solid =
+            widget.isBlocker ||
+            (arrow.state == ArrowState.blocked && color == Colors.redAccent) ||
+            hintBlue;
+        final headColor = solid ? color : widget.theme.headColorFor(color);
+
+        // Crash run: the snake travels along its own path, exactly as far as
+        // the shapes allow (computed by ArrowCollision), then back.
+        final crashShift = _isCrashing ? _crashShift() : null;
 
         // Starts moving immediately with clean quadratic acceleration
         final escapeProgress = _isEscaping
@@ -273,7 +297,7 @@ class ArrowWidgetState extends State<ArrowWidget>
                   showGlow: showGlow,
                   opacity: visualOpacity,
                   snakeProgress: escapeProgress,
-                  shakeOffset: Offset(shakeX, shakeY),
+                  snakeShift: crashShift,
                   motionPath: _motionPath,
                 ),
               ),

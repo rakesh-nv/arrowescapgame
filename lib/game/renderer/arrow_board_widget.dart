@@ -1,12 +1,12 @@
 import 'dart:async' show Timer;
 import 'dart:math' show cos, max, min, pi, sin;
-import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 import '../../data/models/arrow_model.dart';
 import '../../data/models/arrow_state.dart';
 import '../../data/models/theme_model.dart';
 import '../config/puzzle_config.dart';
+import 'arrow_collision.dart';
 import 'arrow_painter.dart';
 import 'arrow_widget.dart';
 
@@ -14,8 +14,8 @@ import 'arrow_widget.dart';
 ///
 /// - The whole board is fitted to the available space (any grid size).
 /// - Pinch-to-zoom and one-finger drag-to-pan via [InteractiveViewer]. The
-///   pan is unbounded in every direction and the dot lattice continues past
-///   the grid, so the board feels endless; a Fit chip appears once moved.
+///   pan is unbounded in every direction, so the board feels endless; a Fit
+///   chip appears once moved. No dots or grid lines are drawn.
 /// - Cell-accurate tap detection: taps are converted to scene coordinates
 ///   with the viewer's transform before the grid hit-test. A drag never
 ///   counts as a tap, and a touch that lands while the board is still
@@ -36,7 +36,7 @@ class ArrowBoardWidget extends StatefulWidget {
   final bool isCompleting;
 
   /// Silhouette cells (the picture the arrows form). The view is framed on
-  /// this picture, and dots outside it are dimmed.
+  /// this picture.
   final Set<(int, int)> shapeCells;
 
   const ArrowBoardWidget({
@@ -57,6 +57,9 @@ class ArrowBoardWidget extends StatefulWidget {
   /// Share of the available area the fitted picture fills (its own half-cell
   /// margin keeps arrows off the edge).
   static const double fitFraction = 0.985;
+
+  /// Board background for light themes.
+  static const Color lightBoardColor = Color(0xFFFFFFFF);
 
   /// How far the player can zoom out, as a fraction of the fitted size.
   static const double minZoomFraction = 0.5;
@@ -124,6 +127,40 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
       arrow.id,
       () => ArrowMotionPath.build(arrow: arrow, cellSize: cellSize),
     );
+  }
+
+  /// Crash run of each currently blocked arrow: distance to the contact
+  /// point and travel time. Computed once when the arrow becomes blocked.
+  final Map<String, (double, int)> _crashRuns = {};
+  double? _crashCellSize;
+
+  (double, int) _crashRunFor(ArrowModel arrow, double cellSize) {
+    if (_crashCellSize != cellSize) {
+      _crashRuns.clear();
+      _crashCellSize = cellSize;
+    }
+    return _crashRuns.putIfAbsent(arrow.id, () {
+      final remaining = [
+        for (final a in widget.arrows)
+          if (a.state != ArrowState.removed) a,
+      ];
+      final cells =
+          ArrowCollision.laneCellsToCollision(
+            arrow,
+            remaining,
+            widget.gridSize,
+          ) ??
+          1;
+      final travel =
+          ArrowCollision.crashTravel(
+            arrow: arrow,
+            remaining: remaining,
+            gridSize: widget.gridSize,
+            cellSize: cellSize,
+          ) ??
+          0;
+      return (travel, CrashTiming.travelMs(cells));
+    });
   }
 
   @override
@@ -414,6 +451,12 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
 
         final idle = <ArrowModel>[];
         final active = <ArrowModel>[];
+        // Forget crash runs of arrows that are no longer blocked.
+        _crashRuns.removeWhere(
+          (id, _) => !widget.arrows.any(
+            (a) => a.id == id && a.state == ArrowState.blocked,
+          ),
+        );
         for (final arrow in widget.arrows) {
           if (arrow.state == ArrowState.removed) continue;
           final animated =
@@ -425,29 +468,13 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
 
         return Stack(
           children: [
-            // Dimmed dot lattice beyond the grid, following the pan and zoom,
-            // so the board reads as endless rather than as a floating card.
-            Positioned.fill(
-              child: IgnorePointer(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, t, child) =>
-                      Opacity(opacity: t, child: child),
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _OuterDotFieldPainter(
-                        transform: _tc,
-                        gridSize: widget.gridSize,
-                        cellSize: cellSize,
-                        dotColor: widget.theme.gridDotColor,
-                      ),
-                    ),
-                  ),
-                ),
+            // Light themes: plain pure-white board across the whole viewport,
+            // so it stays white wherever the board is zoomed or panned. Dark
+            // themes keep their own background (their arrows are light).
+            if (!widget.theme.isDark)
+              const Positioned.fill(
+                child: ColoredBox(color: ArrowBoardWidget.lightBoardColor),
               ),
-            ),
             Positioned.fill(
               // GestureDetector OUTSIDE InteractiveViewer so taps are not
               // swallowed by the pan/zoom recogniser; a drag past the touch
@@ -489,8 +516,10 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                             height: gridPx,
                             child: Stack(
                               children: [
-                                // Theme board panel (only themes that set one)
-                                if (widget.theme.boardColor != null)
+                                // Theme board panel (dark themes that set
+                                // one; light themes stay pure white)
+                                if (widget.theme.isDark &&
+                                    widget.theme.boardColor != null)
                                   Positioned.fill(
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
@@ -501,22 +530,6 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                                       ),
                                     ),
                                   ),
-                                // Rangoli / Kolam dot grid
-                                Positioned.fill(
-                                  child: RepaintBoundary(
-                                    child: CustomPaint(
-                                      // Static per level: let the engine cache
-                                      // it while the player pans.
-                                      isComplex: true,
-                                      painter: _DotGridPainter(
-                                        gridSize: widget.gridSize,
-                                        cellSize: cellSize,
-                                        dotColor: widget.theme.gridDotColor,
-                                        shapeCells: widget.shapeCells,
-                                      ),
-                                    ),
-                                  ),
-                                ),
                                 // Every idle arrow in one layer: a board of
                                 // ~90 arrows is one picture, not 90 layers
                                 // with 270 animation controllers.
@@ -549,6 +562,14 @@ class _ArrowBoardWidgetState extends State<ArrowBoardWidget>
                                     isBlocker:
                                         arrow.id == widget.blockerArrowId,
                                     origin: Offset.zero,
+                                    crashTravel:
+                                        arrow.state == ArrowState.blocked
+                                        ? _crashRunFor(arrow, cellSize).$1
+                                        : 0,
+                                    crashTravelMs:
+                                        arrow.state == ArrowState.blocked
+                                        ? _crashRunFor(arrow, cellSize).$2
+                                        : 110,
                                   ),
                                 ),
                               ],
@@ -670,133 +691,4 @@ class _IdleArrowsPainter extends CustomPainter {
     }
     return false;
   }
-}
-
-/// Scene radius of a grid dot. Dots stay narrower than the thin arrow
-/// stroke, so a dot under an arrow is fully covered and never peeks out as a
-/// grey halo. Shared by the grid and the outer lattice so they match.
-double _dotRadiusFor(double cellSize) => min(
-  (cellSize * 0.06).clamp(2.0, 4.0),
-  PuzzleConfig.strokeWidthFor(cellSize) * 0.4,
-);
-
-/// Continues the dimmed dot lattice outside the grid across the whole
-/// viewport, aligned to the same cell centres, at the current pan and zoom.
-/// Only the visible dots are drawn (one batched call), and none when cells
-/// are too small on screen to read, so it stays cheap while panning.
-class _OuterDotFieldPainter extends CustomPainter {
-  final TransformationController transform;
-  final int gridSize;
-  final double cellSize;
-  final Color dotColor;
-
-  /// Below this on-screen spacing the dots would be sub-pixel noise.
-  static const double _minScreenSpacing = 6;
-
-  _OuterDotFieldPainter({
-    required this.transform,
-    required this.gridSize,
-    required this.cellSize,
-    required this.dotColor,
-  }) : super(repaint: transform);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final m = transform.value;
-    final scale = m.getMaxScaleOnAxis();
-    final step = cellSize * scale;
-    if (!step.isFinite || step < _minScreenSpacing) return;
-    final t = m.getTranslation();
-
-    // Visible cell range, in grid coordinates.
-    final c0 = (-t.x / step - 0.5).floor();
-    final c1 = ((size.width - t.x) / step - 0.5).ceil();
-    final r0 = (-t.y / step - 0.5).floor();
-    final r1 = ((size.height - t.y) / step - 0.5).ceil();
-
-    final points = <Offset>[];
-    for (var r = r0; r <= r1; r++) {
-      final y = t.y + (r + 0.5) * step;
-      final rowInGrid = r >= 0 && r < gridSize;
-      for (var c = c0; c <= c1; c++) {
-        if (rowInGrid && c >= 0 && c < gridSize) {
-          // The grid painter draws these; skip past the grid.
-          c = gridSize - 1;
-          continue;
-        }
-        points.add(Offset(t.x + (c + 0.5) * step, y));
-      }
-    }
-    if (points.isEmpty) return;
-    canvas.drawPoints(
-      PointMode.points,
-      points,
-      Paint()
-        ..color = dotColor.withValues(alpha: dotColor.a * 0.4)
-        ..isAntiAlias = true
-        ..strokeWidth = _dotRadiusFor(cellSize) * 2 * scale
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_OuterDotFieldPainter old) =>
-      !identical(old.transform, transform) ||
-      old.gridSize != gridSize ||
-      old.cellSize != cellSize ||
-      old.dotColor != dotColor;
-}
-
-/// Paints the Rangoli / Kolam dot grid. When the level has a silhouette,
-/// dots inside the picture keep full strength and dots outside it are dimmed,
-/// so the shape stays readable without painting anything behind the arrows.
-class _DotGridPainter extends CustomPainter {
-  final int gridSize;
-  final double cellSize;
-  final Color dotColor;
-  final Set<(int, int)> shapeCells;
-
-  const _DotGridPainter({
-    required this.gridSize,
-    required this.cellSize,
-    required this.dotColor,
-    this.shapeCells = const {},
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hasShape = shapeCells.isNotEmpty;
-    final dotRadius = _dotRadiusFor(cellSize);
-
-    // Round points drawn in two batched calls (inside / outside the
-    // picture) instead of one circle per cell: 3,600 cells on a 60×60 board.
-    Paint dots(Color color) => Paint()
-      ..color = color
-      ..isAntiAlias = true
-      ..strokeWidth = dotRadius * 2
-      ..strokeCap = StrokeCap.round;
-    final inside = <Offset>[];
-    final outside = <Offset>[];
-    for (var r = 0; r < gridSize; r++) {
-      for (var c = 0; c < gridSize; c++) {
-        final centre = Offset((c + 0.5) * cellSize, (r + 0.5) * cellSize);
-        (!hasShape || shapeCells.contains((r, c)) ? inside : outside).add(
-          centre,
-        );
-      }
-    }
-    canvas.drawPoints(PointMode.points, inside, dots(dotColor));
-    canvas.drawPoints(
-      PointMode.points,
-      outside,
-      dots(dotColor.withValues(alpha: dotColor.a * 0.4)),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_DotGridPainter oldDelegate) =>
-      oldDelegate.gridSize != gridSize ||
-      oldDelegate.cellSize != cellSize ||
-      oldDelegate.dotColor != dotColor ||
-      !identical(oldDelegate.shapeCells, shapeCells);
 }

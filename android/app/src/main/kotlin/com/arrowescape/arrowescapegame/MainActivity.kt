@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -31,10 +30,6 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             InAppUpdateHandler.METHOD_CHANNEL,
         ).setMethodCallHandler(handler)
-        EventChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            InAppUpdateHandler.EVENT_CHANNEL,
-        ).setStreamHandler(handler)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

@@ -2,6 +2,7 @@
 @Timeout(Duration(minutes: 3))
 library;
 
+import 'package:arrowescapegame/game/renderer/arrow_collision.dart';
 import 'package:arrowescapegame/core/constants/app_constants.dart';
 import 'package:arrowescapegame/data/models/player_progress.dart';
 import 'package:arrowescapegame/data/repositories/level_repository.dart';
@@ -126,9 +127,7 @@ void main() {
       for (var i = 0; i < AppConstants.startingLives; i++) {
         gc.onArrowTap(blocked);
         await Future.delayed(
-          const Duration(
-            milliseconds: AppConstants.blockedAnimDurationMs + 200,
-          ),
+          const Duration(milliseconds: CrashTiming.maxTotalMs + 60),
         );
       }
       expect(gc.isGameOver.value, isTrue);
