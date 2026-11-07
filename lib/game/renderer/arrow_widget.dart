@@ -141,6 +141,14 @@ class ArrowWidgetState extends State<ArrowWidget>
       _playEscape();
     }
 
+    // Escape cancelled (undo / reset restored the arrow): drop the run.
+    if (newState != ArrowState.escaping &&
+        newState != ArrowState.removed &&
+        _isEscaping) {
+      _escapeController.reset();
+      _isEscaping = false;
+    }
+
     if (newState == ArrowState.normal && _isCrashing) {
       _crashController.reset();
       _isCrashing = false;
@@ -205,11 +213,11 @@ class ArrowWidgetState extends State<ArrowWidget>
 
   void _playEscape() {
     _isEscaping = true;
-    _escapeController.forward(from: 0).then((_) {
-      if (mounted) {
-        setState(() => _isEscaping = false);
-      }
-    });
+    // When the run finishes the arrow stays at its final (off-board, faded)
+    // frame until the engine marks it removed. Clearing `_isEscaping` here
+    // would redraw it, for a frame, at its original cells in the escaping
+    // accent colour: the "blue ghost" after an arrow leaves the board.
+    _escapeController.forward(from: 0);
   }
 
   Color _getArrowColor() {

@@ -35,6 +35,7 @@ class AudioPlayersService extends GetxService implements IAudioService {
   late final AudioPlayer _uiPlayer;
 
   bool _isInitialized = false;
+  bool _escapePreloaded = false;
 
   bool get isSoundEnabled => _soundEnabled;
   bool get isMusicEnabled => _musicEnabled;
@@ -81,6 +82,28 @@ class AudioPlayersService extends GetxService implements IAudioService {
         debugPrint('AudioPlayersService global audio context error: $e');
       }
     }
+    await _preloadEscapeSound();
+  }
+
+  /// Loads and prepares the escape sound on every pooled player once, so a
+  /// tap only has to start playback. `ReleaseMode.stop` keeps the prepared
+  /// source after the sound ends (the default `release` frees it, forcing a
+  /// fresh load + prepare on the next tap).
+  Future<void> _preloadEscapeSound() async {
+    if (!_isInitialized || _escapePlayers.isEmpty) return;
+    try {
+      await Future.wait(
+        _escapePlayers.map((player) async {
+          await player.setReleaseMode(ReleaseMode.stop);
+          await player.setSource(AssetSource(arrowSoundAsset));
+        }),
+      );
+      _escapePreloaded = true;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('AudioPlayersService escape preload error: $e');
+      }
+    }
   }
 
   @override
@@ -99,8 +122,18 @@ class AudioPlayersService extends GetxService implements IAudioService {
     try {
       final player = _escapePlayers[_currentEscapeIndex];
       _currentEscapeIndex = (_currentEscapeIndex + 1) % _escapePlayers.length;
-      await player.stop();
-      await player.play(AssetSource(arrowSoundAsset));
+      if (!_escapePreloaded) {
+        await player.stop();
+        await player.play(AssetSource(arrowSoundAsset));
+        return;
+      }
+      // Source is already prepared: rewind and start, with no awaited
+      // round-trip before playback. Both calls are queued to the platform
+      // in order, so a still-playing pooled player restarts cleanly.
+      player.seek(Duration.zero).catchError((Object e) {
+        if (kDebugMode) debugPrint('AudioService escape seek error: $e');
+      });
+      await player.resume();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('AudioService playArrowEscape error: $e');

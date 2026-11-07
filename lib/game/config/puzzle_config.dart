@@ -87,13 +87,12 @@ class PuzzleConfig {
     );
   }
 
-  /// Arrow body stroke for a cell of [cellSize] scene pixels. Thin (a fifth
-  /// of a cell, matching the reference art) so many long parallel paths stay
-  /// clearly separated: neighbouring bodies keep ~0.8 of a cell of clear
-  /// board between them.
+  /// Arrow body stroke for a cell of [cellSize] scene pixels. Slim (0.225 of
+  /// a cell) so many long parallel paths stay clearly separated:
+  /// neighbouring bodies keep ~0.78 of a cell of clear board between them.
   /// Shared by layout and [ArrowPainter] so the two never drift apart.
   static double strokeWidthFor(double cellSize) =>
-      (cellSize * 0.20).clamp(6.0, 14.0);
+      (cellSize * 0.225).clamp(6.75, 15.75);
 
   /// Arrowhead length for a cell of [cellSize]: ~0.6 of a cell, about three
   /// stroke widths, so the direction reads at a glance while the head (its
